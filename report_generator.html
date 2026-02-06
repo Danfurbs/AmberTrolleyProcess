@@ -885,16 +885,72 @@ function updateSummaryStats() {
     `;
 }
 
+// ---- Chart threshold helpers ----
+function getGaugeChartThresholds(lineSpeed) {
+    const lines = [];
+    // Reference
+    lines.push({ value: 1435, label: 'Reference (1435)', color: '#666', dash: [6, 4], width: 1 });
+
+    // Wide gauge thresholds
+    lines.push({ value: 1445, label: 'Wide AL (1445)', color: '#28a745', dash: [4, 4], width: 1 });
+
+    if (lineSpeed >= 30) {
+        lines.push({ value: 1450, label: 'Wide IL (1450)', color: '#e67e22', dash: [5, 3], width: 1 });
+    } else if (lineSpeed >= 5) {
+        lines.push({ value: 1450, label: 'Wide IL (1450)', color: '#e67e22', dash: [5, 3], width: 1 });
+    }
+
+    if (lineSpeed > 25) {
+        lines.push({ value: 1458, label: 'Wide IAL (1458)', color: '#c0392b', dash: [6, 3], width: 1.5 });
+    } else if (lineSpeed >= 5) {
+        lines.push({ value: 1460, label: 'Wide IAL (1460)', color: '#c0392b', dash: [6, 3], width: 1.5 });
+    }
+
+    if (lineSpeed >= 105) {
+        lines.push({ value: 1472, label: 'Block Line (1472)', color: '#721c24', dash: [8, 4], width: 2 });
+    } else if (lineSpeed >= 5) {
+        lines.push({ value: 1478, label: 'Block Line (1478)', color: '#721c24', dash: [8, 4], width: 2 });
+    }
+
+    // Tight gauge thresholds
+    if (lineSpeed >= 105) {
+        lines.push({ value: 1430, label: 'Tight AL (1430)', color: '#28a745', dash: [4, 4], width: 1 });
+        lines.push({ value: 1428, label: 'Tight IL (1428)', color: '#e67e22', dash: [5, 3], width: 1 });
+        lines.push({ value: 1426, label: 'Tight IL (1426)', color: '#c0392b', dash: [6, 3], width: 1.5 });
+    } else if (lineSpeed >= 5) {
+        lines.push({ value: 1426, label: 'Tight AL (1426)', color: '#28a745', dash: [4, 4], width: 1 });
+        lines.push({ value: 1424, label: 'Tight IL (1424)', color: '#e67e22', dash: [5, 3], width: 1 });
+        lines.push({ value: 1422, label: 'Tight IL (1422)', color: '#c0392b', dash: [6, 3], width: 1.5 });
+    }
+
+    return lines;
+}
+
+function getTwistChartThresholds(lineSpeed) {
+    const lines = [];
+    // AL: 12mm
+    lines.push({ value: 12, label: 'AL (12mm)', color: '#28a745', dash: [4, 4], width: 1 });
+    // IL: 15mm (lowest IL across all configurations)
+    lines.push({ value: 15, label: 'IL (15mm)', color: '#e67e22', dash: [5, 3], width: 1 });
+    // IAL: speed-dependent
+    if (lineSpeed >= 80) {
+        lines.push({ value: 21, label: 'IAL (21mm)', color: '#c0392b', dash: [6, 3], width: 1.5 });
+    } else if (lineSpeed >= 5) {
+        lines.push({ value: 24, label: 'IAL (24mm)', color: '#c0392b', dash: [6, 3], width: 1.5 });
+    }
+    // Block line: 33mm
+    lines.push({ value: 33, label: 'Block (33mm)', color: '#721c24', dash: [8, 4], width: 2 });
+    return lines;
+}
+
 function buildCharts() {
     const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
     const labels = parsedData.map(r => r.miles + 'mi ' + r.yards.toFixed(0) + 'y');
     const step = Math.max(1, Math.floor(parsedData.length / 30));
     const displayLabels = labels.map((l, i) => i % step === 0 ? l : '');
+    const n = parsedData.length;
 
-    const gaugeThresholds = getGaugeDetectionThresholds(lineSpeed);
-    const twistThreshold = getTwistDetectionThreshold();
-
-    // Gauge chart
+    // ---- Gauge chart ----
     const gaugeCtx = document.getElementById('gaugeChart').getContext('2d');
     if (gaugeChartInstance) gaugeChartInstance.destroy();
 
@@ -905,23 +961,18 @@ function buildCharts() {
             borderColor: '#4a6cf7',
             backgroundColor: 'rgba(74,108,247,0.1)',
             fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.3
-        },
-        {
-            label: 'Reference (1435mm)',
-            data: parsedData.map(() => 1435),
-            borderColor: '#28a745', borderWidth: 1, borderDash: [6, 4], pointRadius: 0, fill: false
-        },
-        {
-            label: 'Wide Gauge AL (' + gaugeThresholds.wideAbove + 'mm)',
-            data: parsedData.map(() => gaugeThresholds.wideAbove),
-            borderColor: '#f39c12', borderWidth: 1, borderDash: [4, 4], pointRadius: 0, fill: false
-        },
-        {
-            label: 'Tight Gauge AL (' + gaugeThresholds.tightBelow + 'mm)',
-            data: parsedData.map(() => gaugeThresholds.tightBelow),
-            borderColor: '#c0392b', borderWidth: 1.5, borderDash: [4, 4], pointRadius: 0, fill: false
         }
     ];
+
+    const gaugeThresholds = getGaugeChartThresholds(lineSpeed);
+    gaugeThresholds.forEach(t => {
+        gaugeDatasets.push({
+            label: t.label,
+            data: Array(n).fill(t.value),
+            borderColor: t.color, borderWidth: t.width, borderDash: t.dash,
+            pointRadius: 0, fill: false
+        });
+    });
 
     gaugeChartInstance = new Chart(gaugeCtx, {
         type: 'line',
@@ -930,7 +981,7 @@ function buildCharts() {
             responsive: true, maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
             plugins: {
-                legend: { position: 'top', labels: { usePointStyle: true, padding: 16 } },
+                legend: { position: 'top', labels: { usePointStyle: true, padding: 12, font: { size: 10 } } },
                 tooltip: { callbacks: { title: (items) => labels[items[0].dataIndex] } }
             },
             scales: {
@@ -940,44 +991,57 @@ function buildCharts() {
         }
     });
 
-    // Twist chart
+    // ---- Twist chart ----
     const twist1Data = parsedData.map(r => r.twist1);
     const twistCtx = document.getElementById('twistChart').getContext('2d');
     if (twistChartInstance) twistChartInstance.destroy();
 
+    const twistDatasets = [
+        {
+            label: 'Twist 1 - 3m (mm)',
+            data: twist1Data,
+            borderColor: '#e67e22', backgroundColor: 'rgba(230,126,34,0.1)',
+            fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.3, spanGaps: false
+        },
+        {
+            label: 'Zero',
+            data: Array(n).fill(0),
+            borderColor: '#aaa', borderWidth: 1, borderDash: [3, 3], pointRadius: 0, fill: false
+        }
+    ];
+
+    const twistThresholds = getTwistChartThresholds(lineSpeed);
+    twistThresholds.forEach(t => {
+        // Positive line (shown in legend)
+        twistDatasets.push({
+            label: '+' + t.label,
+            data: Array(n).fill(t.value),
+            borderColor: t.color, borderWidth: t.width, borderDash: t.dash,
+            pointRadius: 0, fill: false
+        });
+        // Negative mirror (hidden from legend)
+        twistDatasets.push({
+            label: '-' + t.label,
+            data: Array(n).fill(-t.value),
+            borderColor: t.color, borderWidth: t.width, borderDash: t.dash,
+            pointRadius: 0, fill: false
+        });
+    });
+
     twistChartInstance = new Chart(twistCtx, {
         type: 'line',
-        data: {
-            labels: displayLabels,
-            datasets: [
-                {
-                    label: 'Twist 1 - 3m (mm)',
-                    data: twist1Data,
-                    borderColor: '#e67e22', backgroundColor: 'rgba(230,126,34,0.1)',
-                    fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.3, spanGaps: false
-                },
-                {
-                    label: 'Zero line',
-                    data: parsedData.map(() => 0),
-                    borderColor: '#aaa', borderWidth: 1, borderDash: [3, 3], pointRadius: 0, fill: false
-                },
-                {
-                    label: '+AL (' + twistThreshold + 'mm)',
-                    data: parsedData.map(() => twistThreshold),
-                    borderColor: '#28a745', borderWidth: 1, borderDash: [4, 4], pointRadius: 0, fill: false
-                },
-                {
-                    label: '-AL (-' + twistThreshold + 'mm)',
-                    data: parsedData.map(() => -twistThreshold),
-                    borderColor: '#28a745', borderWidth: 1, borderDash: [4, 4], pointRadius: 0, fill: false
-                }
-            ]
-        },
+        data: { labels: displayLabels, datasets: twistDatasets },
         options: {
             responsive: true, maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
             plugins: {
-                legend: { position: 'top', labels: { usePointStyle: true, padding: 16 } },
+                legend: {
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true, padding: 12, font: { size: 10 },
+                        filter: (item) => !item.text.startsWith('-')
+                    }
+                },
                 tooltip: { callbacks: { title: (items) => labels[items[0].dataIndex] } }
             },
             scales: {
