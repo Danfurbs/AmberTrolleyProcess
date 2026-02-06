@@ -161,8 +161,68 @@
             font-size: 12px; color: #555; line-height: 1.5;
         }
 
+        .run-selector-bar {
+            display: flex; gap: 10px; align-items: center; margin-bottom: 20px;
+            padding: 14px 20px; background: #fff; border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08); flex-wrap: wrap;
+        }
+        .run-selector-bar label { font-size: 13px; color: #888; font-weight: 600; }
+        .run-selector-bar select {
+            padding: 6px 12px; border: 1px solid #ccc; border-radius: 6px;
+            font-size: 14px; font-family: inherit; min-width: 200px;
+        }
+        .run-selector-bar select:focus { outline: none; border-color: #4a6cf7; box-shadow: 0 0 0 2px rgba(74,108,247,0.15); }
+        .run-selector-bar .run-count { font-size: 12px; color: #666; padding: 4px 10px; background: #eef; border-radius: 12px; }
+
+        .btn-add-fault {
+            padding: 8px 16px; border: 2px dashed #4a6cf7; border-radius: 6px;
+            background: #f0f4ff; color: #4a6cf7; cursor: pointer; font-size: 13px;
+            font-weight: 600; transition: all 0.2s; margin-bottom: 12px;
+        }
+        .btn-add-fault:hover { background: #4a6cf7; color: #fff; }
+
+        .manual-fault-tag {
+            display: inline-block; padding: 1px 6px; border-radius: 3px;
+            font-size: 9px; font-weight: 700; color: #fff; background: #6c757d;
+            margin-left: 4px; vertical-align: middle;
+        }
+
+        .btn-remove-fault {
+            padding: 2px 6px; border: none; background: #dc3545; color: #fff;
+            border-radius: 3px; cursor: pointer; font-size: 10px; font-weight: 700;
+        }
+        .btn-remove-fault:hover { background: #c82333; }
+
+        .modal-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: #fff; border-radius: 12px; padding: 28px; width: 500px; max-width: 90vw;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        }
+        .modal h3 { font-size: 18px; color: #1a1a2e; margin-bottom: 20px; }
+        .modal-field { margin-bottom: 14px; }
+        .modal-field label { display: block; font-size: 12px; color: #888; font-weight: 600; text-transform: uppercase; margin-bottom: 4px; }
+        .modal-field input, .modal-field select {
+            width: 100%; padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px;
+            font-size: 14px; font-family: inherit;
+        }
+        .modal-field input:focus, .modal-field select:focus { outline: none; border-color: #4a6cf7; }
+        .modal-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+        .modal-actions button {
+            padding: 8px 20px; border: none; border-radius: 6px; cursor: pointer;
+            font-size: 14px; font-weight: 600;
+        }
+        .btn-modal-cancel { background: #eee; color: #666; }
+        .btn-modal-cancel:hover { background: #ddd; }
+        .btn-modal-save { background: #4a6cf7; color: #fff; }
+        .btn-modal-save:hover { background: #3a5ce5; }
+
         @media print {
-            .toolbar, .tabs { display: none; }
+            .toolbar, .tabs, .run-selector-bar { display: none; }
             .page { display: block !important; page-break-after: always; }
             .card { box-shadow: none; border: 1px solid #ddd; }
         }
@@ -175,14 +235,14 @@
     <p>Upload a raw data HTML file from the Amber trolley to generate an inspection report</p>
     <div class="drop-zone" id="dropZone">
         <div class="icon">&#128196;</div>
-        <span>Drop HTML file here or click to browse</span>
-        <input type="file" id="fileInput" accept=".html,.htm,.txt,.csv">
+        <span>Drop file(s) here or click to browse — select multiple for bulk upload</span>
+        <input type="file" id="fileInput" accept=".html,.htm,.txt,.csv" multiple>
     </div>
     <div style="margin-top: 30px; max-width: 560px;">
         <p style="font-size: 13px; color: #999; text-align: center;">
             Classifies twist and gauge faults against Table 3 &amp; Table 5 limits
             (IAL / IL / AL) with speed-dependent thresholds and remedial actions.
-            Export as Excel or PDF.
+            Upload multiple files at once to process several runs. Export as Excel or PDF.
         </p>
     </div>
 </div>
@@ -193,6 +253,12 @@
         <button class="btn-back" onclick="goBack()">Load New File</button>
         <button class="btn-excel" onclick="exportExcel()">Export Excel</button>
         <button class="btn-pdf" onclick="exportPDF()">Export PDF</button>
+    </div>
+
+    <div class="run-selector-bar" id="runSelectorBar" style="display:none;">
+        <label>Active Run</label>
+        <select id="runSelector" onchange="switchRun(this.value)"></select>
+        <span class="run-count" id="runCount"></span>
     </div>
 
     <div class="run-info-bar">
@@ -246,6 +312,7 @@
             <p style="margin-bottom: 12px; color: #666; font-size: 13px;">
                 Wide gauge and tight gauge faults classified per Table 5 thresholds for the configured line speed.
             </p>
+            <button class="btn-add-fault" onclick="openManualGaugeFaultModal()">+ Add Manual Gauge Fault</button>
             <div style="overflow-x: auto;">
                 <table id="gaugeFaultTable">
                     <thead>
@@ -300,6 +367,7 @@
             <p style="margin-bottom: 12px; color: #666; font-size: 13px;">
                 Twist faults classified per Table 3 thresholds. Set the curve radius toggle per fault to adjust IL timescales.
             </p>
+            <button class="btn-add-fault" onclick="openManualTwistFaultModal()">+ Add Manual Twist Fault</button>
             <div style="overflow-x: auto;">
                 <table id="twistFaultTable">
                     <thead>
@@ -348,6 +416,108 @@
     </div>
 </div>
 
+<!-- Manual Gauge Fault Modal -->
+<div class="modal-overlay" id="gaugeModal">
+    <div class="modal">
+        <h3>Add Manual Gauge Fault</h3>
+        <div class="modal-row">
+            <div class="modal-field">
+                <label>Start Miles</label>
+                <input type="number" id="mgStartMiles" step="1" min="0" placeholder="e.g. 21">
+            </div>
+            <div class="modal-field">
+                <label>Start Yards</label>
+                <input type="number" id="mgStartYards" step="0.1" min="0" placeholder="e.g. 1160.0">
+            </div>
+        </div>
+        <div class="modal-row">
+            <div class="modal-field">
+                <label>End Miles</label>
+                <input type="number" id="mgEndMiles" step="1" min="0" placeholder="e.g. 21">
+            </div>
+            <div class="modal-field">
+                <label>End Yards</label>
+                <input type="number" id="mgEndYards" step="0.1" min="0" placeholder="e.g. 1165.0">
+            </div>
+        </div>
+        <div class="modal-row">
+            <div class="modal-field">
+                <label>Worst Gauge (mm)</label>
+                <input type="number" id="mgWorstGauge" step="0.1" placeholder="e.g. 1450.5">
+            </div>
+            <div class="modal-field">
+                <label>Fault Type</label>
+                <select id="mgFaultDirection">
+                    <option value="wide">Wide Gauge</option>
+                    <option value="tight">Tight Gauge</option>
+                </select>
+            </div>
+        </div>
+        <div class="modal-field">
+            <label>Fault No. (optional)</label>
+            <input type="text" id="mgFaultNo" placeholder="e.g. GF-001">
+        </div>
+        <div class="modal-actions">
+            <button class="btn-modal-cancel" onclick="closeModal('gaugeModal')">Cancel</button>
+            <button class="btn-modal-save" onclick="saveManualGaugeFault()">Add Fault</button>
+        </div>
+    </div>
+</div>
+
+<!-- Manual Twist Fault Modal -->
+<div class="modal-overlay" id="twistModal">
+    <div class="modal">
+        <h3>Add Manual Twist Fault</h3>
+        <div class="modal-row">
+            <div class="modal-field">
+                <label>Start Miles</label>
+                <input type="number" id="mtStartMiles" step="1" min="0" placeholder="e.g. 21">
+            </div>
+            <div class="modal-field">
+                <label>Start Yards</label>
+                <input type="number" id="mtStartYards" step="0.1" min="0" placeholder="e.g. 1160.0">
+            </div>
+        </div>
+        <div class="modal-row">
+            <div class="modal-field">
+                <label>End Miles</label>
+                <input type="number" id="mtEndMiles" step="1" min="0" placeholder="e.g. 21">
+            </div>
+            <div class="modal-field">
+                <label>End Yards</label>
+                <input type="number" id="mtEndYards" step="0.1" min="0" placeholder="e.g. 1165.0">
+            </div>
+        </div>
+        <div class="modal-row">
+            <div class="modal-field">
+                <label>Max |Twist| (mm)</label>
+                <input type="number" id="mtMaxTwist" step="0.1" min="0" placeholder="e.g. 18.5">
+            </div>
+            <div class="modal-field">
+                <label>Worst Value (mm, signed)</label>
+                <input type="number" id="mtWorstValue" step="0.1" placeholder="e.g. -18.5">
+            </div>
+        </div>
+        <div class="modal-row">
+            <div class="modal-field">
+                <label>Curve Radius</label>
+                <select id="mtCurveRadius">
+                    <option value="gte400">&ge; 400m</option>
+                    <option value="lt400">&lt; 400m</option>
+                </select>
+            </div>
+            <div class="modal-field">
+                <label>Fault No. (optional)</label>
+                <input type="text" id="mtFaultNo" placeholder="e.g. TF-001">
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn-modal-cancel" onclick="closeModal('twistModal')">Cancel</button>
+            <button class="btn-modal-save" onclick="saveManualTwistFault()">Add Fault</button>
+        </div>
+    </div>
+</div>
+
 <script>
 // ---- State ----
 let parsedData = null;
@@ -356,6 +526,14 @@ let twistFaults = [];
 let metadata = {};
 let gaugeChartInstance = null;
 let twistChartInstance = null;
+
+// Manual faults (kept separate so we can tag them)
+let manualGaugeFaults = [];
+let manualTwistFaults = [];
+
+// Bulk upload: store all loaded runs
+let allRuns = []; // [{parsedData, metadata, filename}, ...]
+let activeRunIndex = -1;
 
 // Per-fault curve radius settings (indexed by fault index)
 let twistFaultRadiusSettings = []; // true = <400m, false = >=400m
@@ -562,7 +740,7 @@ function getTwistDetectionThreshold() {
     return 12;
 }
 
-// ---- Upload ----
+// ---- Upload (supports bulk / multiple files) ----
 const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
 
@@ -572,29 +750,41 @@ dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover
 dropZone.addEventListener('drop', e => {
     e.preventDefault();
     dropZone.classList.remove('dragover');
-    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
 });
-fileInput.addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+fileInput.addEventListener('change', e => { if (e.target.files.length) handleFiles(e.target.files); });
 
-function handleFile(file) {
-    const reader = new FileReader();
-    reader.onload = e => {
-        try {
-            const content = e.target.result;
-            parseData(content);
-            buildReport();
-            document.getElementById('uploadScreen').style.display = 'none';
-            document.getElementById('reportContainer').classList.add('active');
-        } catch (err) {
-            alert('Error parsing file: ' + err.message);
-            console.error(err);
-        }
-    };
-    reader.readAsText(file);
+function handleFiles(files) {
+    const fileArray = Array.from(files);
+    let loaded = 0;
+    const errors = [];
+
+    fileArray.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = e => {
+            try {
+                const content = e.target.result;
+                const result = parseDataForRun(content);
+                allRuns.push({
+                    parsedData: result.data,
+                    metadata: result.meta,
+                    filename: file.name,
+                    manualGaugeFaults: [],
+                    manualTwistFaults: []
+                });
+            } catch (err) {
+                errors.push(file.name + ': ' + err.message);
+            }
+            loaded++;
+            if (loaded === fileArray.length) {
+                onAllFilesLoaded(errors);
+            }
+        };
+        reader.readAsText(file);
+    });
 }
 
-// ---- Parsing ----
-function parseData(content) {
+function parseDataForRun(content) {
     let lines;
     if (content.includes('<table') || content.includes('<TABLE')) {
         lines = parseHTMLTable(content);
@@ -602,10 +792,9 @@ function parseData(content) {
         lines = content.split('\n').map(l => l.trim()).filter(l => l);
     }
 
-    metadata = {};
+    const meta = {};
     const dataRows = [];
     let headerFound = false;
-    let columnHeaders = [];
 
     for (let i = 0; i < lines.length; i++) {
         const line = typeof lines[i] === 'string' ? lines[i] : lines[i].join('\t');
@@ -615,21 +804,20 @@ function parseData(content) {
 
         if (!headerFound && cells[0] === 'Miles' && cells[1] === 'Yards') {
             headerFound = true;
-            columnHeaders = cells;
             continue;
         }
 
         if (!headerFound) {
             if (cells.length >= 2 && cells[0] && cells[1]) {
-                metadata[cells[0]] = cells[1];
+                meta[cells[0]] = cells[1];
             } else if (cells.length === 1 && cells[0].includes('\t')) {
                 const parts = cells[0].split('\t');
-                if (parts.length >= 2) metadata[parts[0].trim()] = parts[1].trim();
+                if (parts.length >= 2) meta[parts[0].trim()] = parts[1].trim();
             }
             if (typeof lines[i] === 'string' && !cells[1] && line.includes('\t')) {
                 const parts = line.split('\t');
                 if (parts.length >= 2 && parts[0].trim()) {
-                    metadata[parts[0].trim()] = parts[1].trim();
+                    meta[parts[0].trim()] = parts[1].trim();
                 }
             }
             continue;
@@ -652,12 +840,72 @@ function parseData(content) {
         }
     }
 
-    parsedData = dataRows;
-
-    if (parsedData.length === 0) {
+    if (dataRows.length === 0) {
         throw new Error('No measurement data rows found. Check file format.');
     }
 
+    return { data: dataRows, meta: meta };
+}
+
+function onAllFilesLoaded(errors) {
+    if (errors.length > 0 && allRuns.length === 0) {
+        alert('Failed to parse files:\n' + errors.join('\n'));
+        return;
+    }
+    if (errors.length > 0) {
+        alert('Some files had errors:\n' + errors.join('\n') + '\n\nSuccessfully loaded ' + allRuns.length + ' run(s).');
+    }
+
+    // Show run selector if multiple runs
+    updateRunSelector();
+    switchRun(0);
+
+    document.getElementById('uploadScreen').style.display = 'none';
+    document.getElementById('reportContainer').classList.add('active');
+}
+
+function updateRunSelector() {
+    const bar = document.getElementById('runSelectorBar');
+    const sel = document.getElementById('runSelector');
+    const countEl = document.getElementById('runCount');
+
+    if (allRuns.length > 1) {
+        bar.style.display = 'flex';
+        sel.innerHTML = allRuns.map((run, i) => {
+            const label = run.metadata['Route ID']
+                ? run.metadata['Route ID'] + ' / ' + (run.metadata['Track ID'] || '') + ' (' + run.filename + ')'
+                : run.filename;
+            return `<option value="${i}">${label}</option>`;
+        }).join('');
+        countEl.textContent = allRuns.length + ' runs loaded';
+    } else {
+        bar.style.display = 'none';
+    }
+}
+
+function switchRun(index) {
+    index = parseInt(index);
+    activeRunIndex = index;
+    const run = allRuns[index];
+    parsedData = run.parsedData;
+    metadata = run.metadata;
+    manualGaugeFaults = run.manualGaugeFaults;
+    manualTwistFaults = run.manualTwistFaults;
+
+    document.getElementById('runSelector').value = index;
+    identifyFaults();
+    buildReport();
+}
+
+function handleFile(file) {
+    handleFiles([file]);
+}
+
+// ---- Parsing ----
+function parseData(content) {
+    const result = parseDataForRun(content);
+    parsedData = result.data;
+    metadata = result.meta;
     identifyFaults();
 }
 
@@ -872,13 +1120,25 @@ function updateSummaryStats() {
     const maxTwist = twistValues.length ? Math.max(...twistValues.map(v => Math.abs(v))) : 0;
 
     const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
-    const ialGauge = gaugeFaults.filter(f => { const c = classifyGaugeFault(f.worstGauge, lineSpeed); return c && c.category === 'IAL'; }).length;
-    const ialTwist = twistFaults.filter((f, i) => { const c = classifyTwistFault(f.maxAbsTwist, lineSpeed, twistFaultRadiusSettings[i]); return c && c.category === 'IAL'; }).length;
+    const allGaugeFaults = gaugeFaults.concat(manualGaugeFaults);
+    const allTwistFaults = twistFaults.concat(manualTwistFaults);
+    const ialGauge = allGaugeFaults.filter(f => { const c = classifyGaugeFault(f.worstGauge, lineSpeed); return c && c.category === 'IAL'; }).length;
+    const ialTwist = allTwistFaults.filter((f, i) => {
+        const isManual = i >= twistFaults.length;
+        const radius = isManual ? f.curveRadiusLessThan400 : twistFaultRadiusSettings[i];
+        const c = classifyTwistFault(f.maxAbsTwist, lineSpeed, radius);
+        return c && c.category === 'IAL';
+    }).length;
+
+    const totalGauge = allGaugeFaults.length;
+    const totalTwist = allTwistFaults.length;
+    const manualCount = manualGaugeFaults.length + manualTwistFaults.length;
+    const manualNote = manualCount > 0 ? ` (${manualCount} manual)` : '';
 
     statsDiv.innerHTML = `
         <div class="stat-card"><div class="number">${totalPoints}</div><div class="label">Data Points</div></div>
-        <div class="stat-card ${gaugeFaults.length > 0 ? 'danger' : ''}"><div class="number">${gaugeFaults.length}</div><div class="label">Gauge Faults</div></div>
-        <div class="stat-card ${twistFaults.length > 0 ? 'warning' : ''}"><div class="number">${twistFaults.length}</div><div class="label">Twist Faults</div></div>
+        <div class="stat-card ${totalGauge > 0 ? 'danger' : ''}"><div class="number">${totalGauge}</div><div class="label">Gauge Faults${manualGaugeFaults.length > 0 ? ' (' + manualGaugeFaults.length + ' manual)' : ''}</div></div>
+        <div class="stat-card ${totalTwist > 0 ? 'warning' : ''}"><div class="number">${totalTwist}</div><div class="label">Twist Faults${manualTwistFaults.length > 0 ? ' (' + manualTwistFaults.length + ' manual)' : ''}</div></div>
         <div class="stat-card ${ialGauge + ialTwist > 0 ? 'danger' : ''}"><div class="number">${ialGauge + ialTwist}</div><div class="label">IAL Faults</div></div>
         <div class="stat-card"><div class="number">${minGauge.toFixed(1)}</div><div class="label">Min Gauge (mm)</div></div>
         <div class="stat-card"><div class="number">${maxTwist.toFixed(1)}</div><div class="label">Max |Twist| (mm)</div></div>
@@ -1056,11 +1316,12 @@ function buildGaugeFaultTable() {
     const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
     const tbody = document.querySelector('#gaugeFaultTable tbody');
     tbody.innerHTML = '';
-    if (gaugeFaults.length === 0) {
+    const allGaugeFaults = gaugeFaults.concat(manualGaugeFaults);
+    if (allGaugeFaults.length === 0) {
         tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:30px;color:#888;">No gauge faults detected</td></tr>';
         return;
     }
-    gaugeFaults.forEach((f, idx) => {
+    allGaugeFaults.forEach((f, idx) => {
         const classification = classifyGaugeFault(f.worstGauge, lineSpeed);
         const tr = document.createElement('tr');
         tr.className = classification ? classification.rowClass : '';
@@ -1069,10 +1330,13 @@ function buildGaugeFaultTable() {
             : '<span style="color:#999;">--</span>';
         const faultType = classification ? classification.type : (f.direction === 'wide' ? 'Wide Gauge' : 'Tight Gauge');
         const actionText = classification ? classification.action : (lineSpeed < 5 ? 'Set line speed' : 'Below threshold');
+        const manualTag = f.manual ? '<span class="manual-fault-tag">MANUAL</span>' : '';
+        const removeBtn = f.manual ? `<button class="btn-remove-fault" onclick="removeManualGaugeFault(${idx - gaugeFaults.length})" title="Remove manual fault">X</button>` : '';
+        const defaultFaultNo = f.manual && f.faultNo ? f.faultNo : '';
 
         tr.innerHTML = `
-            <td>${idx + 1}</td>
-            <td><input type="text" class="fault-no-input" data-type="gauge" data-idx="${idx}" placeholder="--" style="width:55px;padding:3px 5px;border:1px solid #ccc;border-radius:4px;font-size:11px;text-align:center;"></td>
+            <td>${idx + 1} ${manualTag}</td>
+            <td><input type="text" class="fault-no-input" data-type="gauge" data-idx="${idx}" placeholder="--" value="${defaultFaultNo}" style="width:55px;padding:3px 5px;border:1px solid #ccc;border-radius:4px;font-size:11px;text-align:center;"></td>
             <td>${f.startLocation}</td>
             <td>${f.endLocation}</td>
             <td>${f.length}</td>
@@ -1080,7 +1344,7 @@ function buildGaugeFaultTable() {
             <td>${f.deviation}</td>
             <td>${faultType}</td>
             <td>${catBadge}</td>
-            <td style="font-size:11px;max-width:220px;">${actionText}</td>
+            <td style="font-size:11px;max-width:220px;">${actionText} ${removeBtn}</td>
         `;
         tbody.appendChild(tr);
     });
@@ -1090,12 +1354,13 @@ function buildTwistFaultTable() {
     const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
     const tbody = document.querySelector('#twistFaultTable tbody');
     tbody.innerHTML = '';
-    if (twistFaults.length === 0) {
+    const allTwistFaults = twistFaults.concat(manualTwistFaults);
+    if (allTwistFaults.length === 0) {
         tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:30px;color:#888;">No twist faults detected</td></tr>';
         return;
     }
-    twistFaults.forEach((f, idx) => {
-        const isLessThan400 = twistFaultRadiusSettings[idx];
+    allTwistFaults.forEach((f, idx) => {
+        const isLessThan400 = f.manual ? f.curveRadiusLessThan400 : twistFaultRadiusSettings[idx];
         const classification = classifyTwistFault(f.maxAbsTwist, lineSpeed, isLessThan400);
         const tr = document.createElement('tr');
         tr.className = classification ? classification.rowClass : '';
@@ -1103,10 +1368,13 @@ function buildTwistFaultTable() {
             ? `<span class="badge ${classification.badge}">${classification.category}</span>`
             : '<span style="color:#999;">--</span>';
         const actionText = classification ? classification.action : (lineSpeed < 5 ? 'Set line speed' : 'Below threshold');
+        const manualTag = f.manual ? '<span class="manual-fault-tag">MANUAL</span>' : '';
+        const removeBtn = f.manual ? `<button class="btn-remove-fault" onclick="removeManualTwistFault(${idx - twistFaults.length})" title="Remove manual fault">X</button>` : '';
+        const defaultFaultNo = f.manual && f.faultNo ? f.faultNo : '';
 
         tr.innerHTML = `
-            <td>${idx + 1}</td>
-            <td><input type="text" class="fault-no-input" data-type="twist" data-idx="${idx}" placeholder="--" style="width:55px;padding:3px 5px;border:1px solid #ccc;border-radius:4px;font-size:11px;text-align:center;"></td>
+            <td>${idx + 1} ${manualTag}</td>
+            <td><input type="text" class="fault-no-input" data-type="twist" data-idx="${idx}" placeholder="--" value="${defaultFaultNo}" style="width:55px;padding:3px 5px;border:1px solid #ccc;border-radius:4px;font-size:11px;text-align:center;"></td>
             <td>${f.startLocation}</td>
             <td>${f.endLocation}</td>
             <td>${f.length}</td>
@@ -1119,7 +1387,7 @@ function buildTwistFaultTable() {
                 </select>
             </td>
             <td>${catBadge}</td>
-            <td style="font-size:11px;max-width:220px;">${actionText}</td>
+            <td style="font-size:11px;max-width:220px;">${actionText} ${removeBtn}</td>
         `;
         tbody.appendChild(tr);
     });
@@ -1127,8 +1395,13 @@ function buildTwistFaultTable() {
 
 function onRadiusChange(selectEl) {
     const idx = parseInt(selectEl.dataset.twistIdx);
-    twistFaultRadiusSettings[idx] = (selectEl.value === 'lt400');
-    // Rebuild just the twist table and summary
+    const isManual = idx >= twistFaults.length;
+    if (isManual) {
+        const manualIdx = idx - twistFaults.length;
+        manualTwistFaults[manualIdx].curveRadiusLessThan400 = (selectEl.value === 'lt400');
+    } else {
+        twistFaultRadiusSettings[idx] = (selectEl.value === 'lt400');
+    }
     buildTwistFaultTable();
     updateSummaryStats();
 }
@@ -1137,7 +1410,141 @@ function onRadiusChange(selectEl) {
 function goBack() {
     document.getElementById('uploadScreen').style.display = 'flex';
     document.getElementById('reportContainer').classList.remove('active');
+    document.getElementById('runSelectorBar').style.display = 'none';
     fileInput.value = '';
+    allRuns = [];
+    activeRunIndex = -1;
+    manualGaugeFaults = [];
+    manualTwistFaults = [];
+}
+
+// ---- Manual Fault Modals ----
+function openManualGaugeFaultModal() {
+    document.getElementById('mgStartMiles').value = '';
+    document.getElementById('mgStartYards').value = '';
+    document.getElementById('mgEndMiles').value = '';
+    document.getElementById('mgEndYards').value = '';
+    document.getElementById('mgWorstGauge').value = '';
+    document.getElementById('mgFaultDirection').value = 'wide';
+    document.getElementById('mgFaultNo').value = '';
+    document.getElementById('gaugeModal').classList.add('active');
+}
+
+function openManualTwistFaultModal() {
+    document.getElementById('mtStartMiles').value = '';
+    document.getElementById('mtStartYards').value = '';
+    document.getElementById('mtEndMiles').value = '';
+    document.getElementById('mtEndYards').value = '';
+    document.getElementById('mtMaxTwist').value = '';
+    document.getElementById('mtWorstValue').value = '';
+    document.getElementById('mtCurveRadius').value = 'gte400';
+    document.getElementById('mtFaultNo').value = '';
+    document.getElementById('twistModal').classList.add('active');
+}
+
+function closeModal(id) {
+    document.getElementById(id).classList.remove('active');
+}
+
+function saveManualGaugeFault() {
+    const startMiles = parseFloat(document.getElementById('mgStartMiles').value);
+    const startYards = parseFloat(document.getElementById('mgStartYards').value);
+    const endMiles = parseFloat(document.getElementById('mgEndMiles').value);
+    const endYards = parseFloat(document.getElementById('mgEndYards').value);
+    const worstGauge = parseFloat(document.getElementById('mgWorstGauge').value);
+    const direction = document.getElementById('mgFaultDirection').value;
+    const faultNo = document.getElementById('mgFaultNo').value;
+
+    if (isNaN(startMiles) || isNaN(startYards) || isNaN(endMiles) || isNaN(endYards) || isNaN(worstGauge)) {
+        alert('Please fill in all required fields (miles, yards, worst gauge).');
+        return;
+    }
+
+    const fault = {
+        startLocation: startMiles + 'mi ' + startYards.toFixed(1) + 'yds',
+        endLocation: endMiles + 'mi ' + endYards.toFixed(1) + 'yds',
+        startMiles, startYards, endMiles, endYards,
+        worstGauge: worstGauge,
+        direction: direction,
+        length: (endYards - startYards).toFixed(1),
+        deviation: direction === 'wide'
+            ? '+' + (worstGauge - 1435).toFixed(1)
+            : '-' + (1435 - worstGauge).toFixed(1),
+        manual: true,
+        faultNo: faultNo,
+        rows: []
+    };
+
+    manualGaugeFaults.push(fault);
+    // Persist to current run
+    if (activeRunIndex >= 0 && allRuns[activeRunIndex]) {
+        allRuns[activeRunIndex].manualGaugeFaults = manualGaugeFaults;
+    }
+
+    closeModal('gaugeModal');
+    buildGaugeFaultTable();
+    updateSummaryStats();
+}
+
+function saveManualTwistFault() {
+    const startMiles = parseFloat(document.getElementById('mtStartMiles').value);
+    const startYards = parseFloat(document.getElementById('mtStartYards').value);
+    const endMiles = parseFloat(document.getElementById('mtEndMiles').value);
+    const endYards = parseFloat(document.getElementById('mtEndYards').value);
+    const maxTwist = parseFloat(document.getElementById('mtMaxTwist').value);
+    const worstValue = parseFloat(document.getElementById('mtWorstValue').value);
+    const curveRadius = document.getElementById('mtCurveRadius').value;
+    const faultNo = document.getElementById('mtFaultNo').value;
+
+    if (isNaN(startMiles) || isNaN(startYards) || isNaN(endMiles) || isNaN(endYards) || isNaN(maxTwist) || isNaN(worstValue)) {
+        alert('Please fill in all required fields.');
+        return;
+    }
+
+    const fault = {
+        startLocation: startMiles + 'mi ' + startYards.toFixed(1) + 'yds',
+        endLocation: endMiles + 'mi ' + endYards.toFixed(1) + 'yds',
+        startMiles, startYards, endMiles, endYards,
+        maxAbsTwist: maxTwist,
+        worstValue: worstValue,
+        length: (endYards - startYards).toFixed(1),
+        manual: true,
+        faultNo: faultNo,
+        curveRadiusLessThan400: curveRadius === 'lt400',
+        rows: []
+    };
+
+    manualTwistFaults.push(fault);
+    twistFaultRadiusSettings.push(fault.curveRadiusLessThan400);
+    // Persist to current run
+    if (activeRunIndex >= 0 && allRuns[activeRunIndex]) {
+        allRuns[activeRunIndex].manualTwistFaults = manualTwistFaults;
+    }
+
+    closeModal('twistModal');
+    buildTwistFaultTable();
+    updateSummaryStats();
+}
+
+function removeManualGaugeFault(manualIdx) {
+    manualGaugeFaults.splice(manualIdx, 1);
+    if (activeRunIndex >= 0 && allRuns[activeRunIndex]) {
+        allRuns[activeRunIndex].manualGaugeFaults = manualGaugeFaults;
+    }
+    buildGaugeFaultTable();
+    updateSummaryStats();
+}
+
+function removeManualTwistFault(manualIdx) {
+    // Find the position in the combined array to remove the radius setting
+    const combinedIdx = twistFaults.length + manualIdx;
+    twistFaultRadiusSettings.splice(combinedIdx, 1);
+    manualTwistFaults.splice(manualIdx, 1);
+    if (activeRunIndex >= 0 && allRuns[activeRunIndex]) {
+        allRuns[activeRunIndex].manualTwistFaults = manualTwistFaults;
+    }
+    buildTwistFaultTable();
+    updateSummaryStats();
 }
 
 // ---- Export Excel ----
@@ -1169,9 +1576,10 @@ function exportExcel() {
     const ws2 = XLSX.utils.json_to_sheet(allData);
     XLSX.utils.book_append_sheet(wb, ws2, 'All Data');
 
-    // Sheet 3: Gauge Faults
+    // Sheet 3: Gauge Faults (auto + manual)
+    const allGaugeFaultsExport = gaugeFaults.concat(manualGaugeFaults);
     const gaugeFaultNos = document.querySelectorAll('.fault-no-input[data-type="gauge"]');
-    const gfData = gaugeFaults.map((f, i) => {
+    const gfData = allGaugeFaultsExport.map((f, i) => {
         const c = classifyGaugeFault(f.worstGauge, lineSpeed);
         return {
             '#': i + 1,
@@ -1183,16 +1591,20 @@ function exportExcel() {
             'Deviation (mm)': f.deviation,
             'Fault Type': c ? c.type : (f.direction === 'wide' ? 'Wide Gauge' : 'Tight Gauge'),
             'Category': c ? c.category : '',
-            'Required Action': c ? c.action : ''
+            'Required Action': c ? c.action : '',
+            'Source': f.manual ? 'Manual' : 'Auto-detected'
         };
     });
     const ws3 = XLSX.utils.json_to_sheet(gfData.length ? gfData : [{ Info: 'No gauge faults' }]);
     XLSX.utils.book_append_sheet(wb, ws3, 'Gauge Faults');
 
-    // Sheet 4: Twist Faults
+    // Sheet 4: Twist Faults (auto + manual)
+    const allTwistFaultsExport = twistFaults.concat(manualTwistFaults);
     const twistFaultNos = document.querySelectorAll('.fault-no-input[data-type="twist"]');
-    const tfData = twistFaults.map((f, i) => {
-        const c = classifyTwistFault(f.maxAbsTwist, lineSpeed, twistFaultRadiusSettings[i]);
+    const tfData = allTwistFaultsExport.map((f, i) => {
+        const isManual = f.manual;
+        const radius = isManual ? f.curveRadiusLessThan400 : twistFaultRadiusSettings[i];
+        const c = classifyTwistFault(f.maxAbsTwist, lineSpeed, radius);
         return {
             '#': i + 1,
             'Fault No.': twistFaultNos[i] ? twistFaultNos[i].value : '',
@@ -1201,9 +1613,10 @@ function exportExcel() {
             'Length (yds)': f.length,
             'Max |Twist| (mm)': f.maxAbsTwist.toFixed(1),
             'Worst Value (mm)': f.worstValue.toFixed(1),
-            'Curve Radius': twistFaultRadiusSettings[i] ? '< 400m' : '>= 400m',
+            'Curve Radius': radius ? '< 400m' : '>= 400m',
             'Category': c ? c.category : '',
-            'Required Action': c ? c.action : ''
+            'Required Action': c ? c.action : '',
+            'Source': f.manual ? 'Manual' : 'Auto-detected'
         };
     });
     const ws4 = XLSX.utils.json_to_sheet(tfData.length ? tfData : [{ Info: 'No twist faults' }]);
@@ -1243,8 +1656,8 @@ function exportPDF() {
         head: [['Total Points', 'Gauge Faults', 'Twist Faults', 'Min Gauge', 'Max Gauge', 'Max |Twist|']],
         body: [[
             parsedData.length,
-            gaugeFaults.length,
-            twistFaults.length,
+            gaugeFaults.length + manualGaugeFaults.length,
+            twistFaults.length + manualTwistFaults.length,
             Math.min(...parsedData.map(r => r.gauge)).toFixed(1) + ' mm',
             Math.max(...parsedData.map(r => r.gauge)).toFixed(1) + ' mm',
             (parsedData.filter(r => r.twist1 !== null).length > 0
@@ -1274,8 +1687,9 @@ function exportPDF() {
     doc.setTextColor(26, 26, 46);
     doc.text('Gauge Faults (Table 5 Limits) - Line Speed: ' + (lineSpeed || 'N/A') + ' mph', 14, 20);
 
+    const allGaugeFaultsPdf = gaugeFaults.concat(manualGaugeFaults);
     const pdfGaugeFaultNos = document.querySelectorAll('.fault-no-input[data-type="gauge"]');
-    if (gaugeFaults.length === 0) {
+    if (allGaugeFaultsPdf.length === 0) {
         doc.setFontSize(11);
         doc.setTextColor(100);
         doc.text('No gauge faults detected.', 14, 32);
@@ -1283,10 +1697,10 @@ function exportPDF() {
         doc.autoTable({
             startY: 28,
             head: [['#', 'Fault No.', 'Start', 'End', 'Length', 'Worst Gauge', 'Deviation', 'Type', 'Cat.', 'Required Action']],
-            body: gaugeFaults.map((f, i) => {
+            body: allGaugeFaultsPdf.map((f, i) => {
                 const c = classifyGaugeFault(f.worstGauge, lineSpeed);
                 return [
-                    i + 1,
+                    (f.manual ? '* ' : '') + (i + 1),
                     pdfGaugeFaultNos[i] ? pdfGaugeFaultNos[i].value : '',
                     f.startLocation, f.endLocation, f.length,
                     f.worstGauge.toFixed(1), f.deviation,
@@ -1303,7 +1717,7 @@ function exportPDF() {
     }
 
     // Gauge sign-off
-    const gSignY = gaugeFaults.length > 0 ? doc.lastAutoTable.finalY + 12 : 44;
+    const gSignY = allGaugeFaultsPdf.length > 0 ? doc.lastAutoTable.finalY + 12 : 44;
     doc.setFontSize(12);
     doc.setTextColor(26, 26, 46);
     doc.text('Section Manager Sign-Off', 14, gSignY);
@@ -1320,8 +1734,9 @@ function exportPDF() {
     doc.setTextColor(26, 26, 46);
     doc.text('Twist Faults - 3m Base (Table 3 Limits) - Line Speed: ' + (lineSpeed || 'N/A') + ' mph', 14, 20);
 
+    const allTwistFaultsPdf = twistFaults.concat(manualTwistFaults);
     const pdfTwistFaultNos = document.querySelectorAll('.fault-no-input[data-type="twist"]');
-    if (twistFaults.length === 0) {
+    if (allTwistFaultsPdf.length === 0) {
         doc.setFontSize(11);
         doc.setTextColor(100);
         doc.text('No twist faults detected.', 14, 32);
@@ -1329,14 +1744,16 @@ function exportPDF() {
         doc.autoTable({
             startY: 28,
             head: [['#', 'Fault No.', 'Start', 'End', 'Length', 'Max |Twist|', 'Worst', 'Curve R', 'Cat.', 'Required Action']],
-            body: twistFaults.map((f, i) => {
-                const c = classifyTwistFault(f.maxAbsTwist, lineSpeed, twistFaultRadiusSettings[i]);
+            body: allTwistFaultsPdf.map((f, i) => {
+                const isManual = f.manual;
+                const radius = isManual ? f.curveRadiusLessThan400 : twistFaultRadiusSettings[i];
+                const c = classifyTwistFault(f.maxAbsTwist, lineSpeed, radius);
                 return [
-                    i + 1,
+                    (f.manual ? '* ' : '') + (i + 1),
                     pdfTwistFaultNos[i] ? pdfTwistFaultNos[i].value : '',
                     f.startLocation, f.endLocation, f.length,
                     f.maxAbsTwist.toFixed(1), f.worstValue.toFixed(1),
-                    twistFaultRadiusSettings[i] ? '< 400m' : '>= 400m',
+                    radius ? '< 400m' : '>= 400m',
                     c ? c.category : '',
                     c ? c.action : ''
                 ];
@@ -1349,7 +1766,7 @@ function exportPDF() {
     }
 
     // Twist sign-off
-    const tSignY = twistFaults.length > 0 ? doc.lastAutoTable.finalY + 12 : 44;
+    const tSignY = allTwistFaultsPdf.length > 0 ? doc.lastAutoTable.finalY + 12 : 44;
     doc.setFontSize(12);
     doc.setTextColor(26, 26, 46);
     doc.text('Section Manager Sign-Off', 14, tSignY);
