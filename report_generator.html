@@ -8,6 +8,8 @@
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; color: #333; }
@@ -240,6 +242,21 @@
         .btn-modal-save { background: #4a6cf7; color: #fff; }
         .btn-modal-save:hover { background: #3a5ce5; }
 
+        .comparison-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 12px; }
+        .comparison-table th { background: #1a1a2e; color: #fff; padding: 6px 10px; text-align: left; font-size: 11px; }
+        .comparison-table td { padding: 5px 10px; border-bottom: 1px solid #eee; font-size: 11px; }
+        .comp-new { background: #f8d7da; }
+        .comp-resolved { background: #d4edda; }
+        .comp-persists { background: #fff3cd; }
+        .comp-legend { display: flex; gap: 16px; margin-bottom: 12px; font-size: 12px; }
+        .comp-legend span { padding: 2px 10px; border-radius: 4px; }
+        .btn-clear-comparison {
+            padding: 4px 12px; border: 1px solid #999; background: #fff; color: #666;
+            border-radius: 4px; cursor: pointer; font-size: 11px; margin-left: 8px;
+        }
+        .btn-clear-comparison:hover { background: #eee; }
+        .prev-run-info { padding: 8px 12px; background: #eef; border-radius: 6px; font-size: 12px; color: #336; margin-bottom: 12px; }
+
         @media print {
             .toolbar, .tabs, .run-selector-bar { display: none; }
             .page { display: block !important; page-break-after: always; }
@@ -293,6 +310,19 @@
             <label>Line Speed (mph)</label>
             <input type="number" id="lineSpeedInput" placeholder="e.g. 75" min="5" max="125" style="width:100px;">
         </div>
+        <div class="run-info-group">
+            <label>Track Category</label>
+            <select id="trackCatInput" style="width:120px;">
+                <option value="">-- Select --</option>
+                <option value="1A">Cat 1A</option>
+                <option value="1">Cat 1</option>
+                <option value="2">Cat 2</option>
+                <option value="3">Cat 3</option>
+                <option value="4">Cat 4</option>
+                <option value="5">Cat 5</option>
+                <option value="6">Cat 6</option>
+            </select>
+        </div>
     </div>
 
     <div class="speed-warning" id="speedWarning">
@@ -315,12 +345,35 @@
         <div class="summary-stats" id="summaryStats"></div>
 
         <div class="card">
+            <h3>Fault Location Schematic</h3>
+            <p style="margin-bottom:8px;color:#666;font-size:12px;">Linear diagram showing fault positions along the track. Colour indicates severity.</p>
+            <div id="schematicContainer" style="overflow-x:auto;">
+                <canvas id="schematicCanvas" height="120"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
             <h3>Gauge Profile (mm)</h3>
             <div class="chart-wrapper"><canvas id="gaugeChart"></canvas></div>
         </div>
         <div class="card">
             <h3>Twist over 3m (mm)</h3>
             <div class="chart-wrapper"><canvas id="twistChart"></canvas></div>
+        </div>
+
+        <!-- Previous Run Comparison -->
+        <div class="card" id="comparisonCard">
+            <h3>Run-on-Run Comparison</h3>
+            <div id="comparisonEmpty">
+                <p style="color:#666;font-size:13px;margin-bottom:12px;">
+                    Load a previous report PDF to compare faults between runs.
+                </p>
+                <label class="btn-add-fault" style="cursor:pointer;">
+                    Load Previous Run PDF
+                    <input type="file" id="prevRunInput" accept=".pdf" style="display:none;" onchange="loadPreviousRunPDF(this)">
+                </label>
+            </div>
+            <div id="comparisonResults" style="display:none;"></div>
         </div>
     </div>
 
@@ -656,8 +709,15 @@ function classifyTwistFault(absValue, lineSpeed, curveRadiusLessThan400) {
 }
 
 // ---- Table 5: Gauge Fault Limits ----
-function classifyGaugeFault(gaugeValue, lineSpeed) {
+function classifyGaugeFault(gaugeValue, lineSpeed, trackCat) {
     if (!lineSpeed || lineSpeed < 5) return null;
+    // Resolve track-category-dependent timescale for wide gauge IL
+    const isHighCat = ['1A','1','2','3'].includes(trackCat);
+    const isLowCat = ['4','5','6'].includes(trackCat);
+    let wideILAction;
+    if (isHighCat) wideILAction = 'Correct within 14 days (Cat ' + trackCat + ')';
+    else if (isLowCat) wideILAction = 'Correct within 28 days (Cat ' + trackCat + ')';
+    else wideILAction = 'Cat 1A-3: correct within 14 days; Cat 4-6: correct within 28 days';
 
     // --- WIDE GAUGE (gauge above nominal 1435mm) ---
     if (gaugeValue >= 1435) {
@@ -695,11 +755,11 @@ function classifyGaugeFault(gaugeValue, lineSpeed) {
         // IL - Wide Gauge (Static plus dynamic movement)
         if (lineSpeed >= 105 && gaugeValue >= 1458 && gaugeValue < 1463) {
             return { category: 'IL', type: 'Wide Gauge', badge: 'badge-il', rowClass: 'cat-il',
-                action: 'Track Cat 1A-3: correct within 14 days; Cat 4-6: correct within 28 days' };
+                action: wideILAction };
         }
         if (lineSpeed <= 100 && gaugeValue >= 1460 && gaugeValue < 1470) {
             return { category: 'IL', type: 'Wide Gauge', badge: 'badge-il', rowClass: 'cat-il',
-                action: 'Track Cat 1A-3: correct within 14 days; Cat 4-6: correct within 28 days' };
+                action: wideILAction };
         }
 
         // IL - Static Wide Gauge
@@ -771,6 +831,10 @@ function classifyGaugeFault(gaugeValue, lineSpeed) {
 }
 
 // Get the detection thresholds for gauge based on line speed
+function getTrackCat() {
+    return document.getElementById('trackCatInput').value || '';
+}
+
 function getGaugeDetectionThresholds(lineSpeed) {
     if (!lineSpeed || lineSpeed < 5) {
         // Default broadest thresholds
@@ -1123,9 +1187,11 @@ function buildReport() {
 
     updateSummaryStats();
     buildCharts();
+    buildSchematic();
     buildGaugeFaultTable();
     buildTwistFaultTable();
     updateSpeedWarning();
+    updateComparison();
 
     // Tab handling
     document.querySelectorAll('.tab').forEach(tab => {
@@ -1137,9 +1203,10 @@ function buildReport() {
         });
     });
 
-    // Line speed change handler
+    // Line speed + track cat change handlers
     document.getElementById('lineSpeedInput').addEventListener('change', onLineSpeedChange);
     document.getElementById('lineSpeedInput').addEventListener('input', onLineSpeedChange);
+    document.getElementById('trackCatInput').addEventListener('change', onLineSpeedChange);
 }
 
 function onLineSpeedChange() {
@@ -1148,6 +1215,7 @@ function onLineSpeedChange() {
     buildGaugeFaultTable();
     buildTwistFaultTable();
     buildCharts();
+    buildSchematic();
     updateSpeedWarning();
 }
 
@@ -1172,7 +1240,7 @@ function updateSummaryStats() {
     const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
     const allGaugeFaults = gaugeFaults.concat(manualGaugeFaults);
     const allTwistFaults = twistFaults.concat(manualTwistFaults);
-    const ialGauge = allGaugeFaults.filter(f => { const c = classifyGaugeFault(f.worstGauge, lineSpeed); return c && c.category === 'IAL'; }).length;
+    const ialGauge = allGaugeFaults.filter(f => { const c = classifyGaugeFault(f.worstGauge, lineSpeed, getTrackCat()); return c && c.category === 'IAL'; }).length;
     const ialTwist = allTwistFaults.filter((f, i) => {
         const isManual = i >= twistFaults.length;
         const radius = isManual ? f.curveRadiusLessThan400 : twistFaultRadiusSettings[i];
@@ -1373,7 +1441,7 @@ function buildGaugeFaultTable() {
     }
     allGaugeFaults.forEach((f, idx) => {
         const dismissed = isDismissed('gauge', idx);
-        const classification = classifyGaugeFault(f.worstGauge, lineSpeed);
+        const classification = classifyGaugeFault(f.worstGauge, lineSpeed, getTrackCat());
         const tr = document.createElement('tr');
         tr.className = (classification ? classification.rowClass : '') + (dismissed ? ' dismissed-fault' : '');
         const catBadge = classification
@@ -1683,6 +1751,388 @@ function isDismissed(faultType, idx) {
     return dismissedFaults[faultType + '-' + idx] || null;
 }
 
+// ---- Linear Schematic ----
+function buildSchematic() {
+    const canvas = document.getElementById('schematicCanvas');
+    const ctx = canvas.getContext('2d');
+    const container = document.getElementById('schematicContainer');
+    const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
+    const trackCat = getTrackCat();
+
+    // Calculate track extent
+    if (!parsedData || parsedData.length === 0) return;
+    const allPoints = parsedData.map(r => r.miles * 1760 + r.yards);
+    const minPos = Math.min(...allPoints);
+    const maxPos = Math.max(...allPoints);
+    const range = maxPos - minPos || 1;
+
+    // Canvas sizing
+    const w = Math.max(container.clientWidth - 20, 600);
+    canvas.width = w;
+    canvas.height = 120;
+    const padL = 60, padR = 20, trackY = 50, trackH = 8;
+    const drawW = w - padL - padR;
+
+    function posToX(miles, yards) {
+        return padL + ((miles * 1760 + yards - minPos) / range) * drawW;
+    }
+
+    // Clear
+    ctx.clearRect(0, 0, w, 120);
+
+    // Draw track baseline
+    ctx.fillStyle = '#ddd';
+    ctx.fillRect(padL, trackY - 1, drawW, trackH);
+    ctx.strokeStyle = '#999';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(padL, trackY - 1, drawW, trackH);
+
+    // Tick marks
+    const startMiles = parsedData[0].miles;
+    const endMiles = parsedData[parsedData.length - 1].miles;
+    ctx.fillStyle = '#666';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    for (let m = startMiles; m <= endMiles; m++) {
+        const x = posToX(m, 0);
+        if (x >= padL && x <= padL + drawW) {
+            ctx.beginPath();
+            ctx.moveTo(x, trackY + trackH);
+            ctx.lineTo(x, trackY + trackH + 6);
+            ctx.strokeStyle = '#999';
+            ctx.stroke();
+            ctx.fillText(m + 'mi', x, trackY + trackH + 16);
+        }
+    }
+
+    // Colour map for categories
+    const catColours = { 'IAL': '#c0392b', 'IL': '#e67e22', 'AL': '#28a745' };
+
+    // Draw gauge faults (above track)
+    const allGF = gaugeFaults.concat(manualGaugeFaults);
+    allGF.forEach((f, i) => {
+        if (isDismissed('gauge', i)) return;
+        const c = classifyGaugeFault(f.worstGauge, lineSpeed, trackCat);
+        if (!c) return;
+        const x1 = posToX(f.startMiles, f.startYards);
+        const x2 = posToX(f.endMiles || f.startMiles, f.endYards || f.startYards);
+        const faultW = Math.max(x2 - x1, 3);
+        ctx.fillStyle = catColours[c.category] || '#999';
+        ctx.fillRect(x1, trackY - 14, faultW, 12);
+    });
+
+    // Draw twist faults (below track)
+    const allTF = twistFaults.concat(manualTwistFaults);
+    allTF.forEach((f, i) => {
+        if (isDismissed('twist', i)) return;
+        const isLt400 = f.manual ? f.curveRadiusLessThan400 : twistFaultRadiusSettings[i];
+        const c = classifyTwistFault(f.maxAbsTwist, lineSpeed, isLt400);
+        if (!c) return;
+        const x1 = posToX(f.startMiles, f.startYards);
+        const x2 = posToX(f.endMiles || f.startMiles, f.endYards || f.startYards);
+        const faultW = Math.max(x2 - x1, 3);
+        ctx.fillStyle = catColours[c.category] || '#999';
+        ctx.fillRect(x1, trackY + trackH + 2, faultW, 12);
+    });
+
+    // Labels
+    ctx.fillStyle = '#333';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('Gauge', padL - 6, trackY - 5);
+    ctx.fillText('Twist', padL - 6, trackY + trackH + 12);
+
+    // Legend
+    ctx.textAlign = 'left';
+    let lx = padL;
+    const ly = 108;
+    [['IAL', '#c0392b'], ['IL', '#e67e22'], ['AL', '#28a745']].forEach(([label, col]) => {
+        ctx.fillStyle = col;
+        ctx.fillRect(lx, ly - 8, 12, 10);
+        ctx.fillStyle = '#333';
+        ctx.font = '10px sans-serif';
+        ctx.fillText(label, lx + 15, ly);
+        lx += 50;
+    });
+    // Previous run faults if loaded
+    if (previousRunData) {
+        ctx.fillStyle = 'rgba(0,0,0,0.2)';
+        ctx.fillRect(lx, ly - 8, 12, 10);
+        ctx.strokeStyle = '#333';
+        ctx.setLineDash([2,2]);
+        ctx.strokeRect(lx, ly - 8, 12, 10);
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#333';
+        ctx.fillText('Previous', lx + 15, ly);
+        lx += 65;
+
+        // Draw previous run faults as dashed outlines
+        (previousRunData.gaugeFaults || []).forEach(f => {
+            if (f.startMiles === undefined) return;
+            const x1 = posToX(f.startMiles, f.startYards);
+            const x2 = posToX(f.endMiles || f.startMiles, f.endYards || f.startYards);
+            const faultW = Math.max(x2 - x1, 3);
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([3, 2]);
+            ctx.strokeRect(x1, trackY - 14, faultW, 12);
+            ctx.setLineDash([]);
+        });
+        (previousRunData.twistFaults || []).forEach(f => {
+            if (f.startMiles === undefined) return;
+            const x1 = posToX(f.startMiles, f.startYards);
+            const x2 = posToX(f.endMiles || f.startMiles, f.endYards || f.startYards);
+            const faultW = Math.max(x2 - x1, 3);
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([3, 2]);
+            ctx.strokeRect(x1, trackY + trackH + 2, faultW, 12);
+            ctx.setLineDash([]);
+        });
+    }
+}
+
+// ---- Previous Run PDF Comparison ----
+let previousRunData = null; // {gaugeFaults:[], twistFaults:[], metadata:{}, lineSpeed, trackCat}
+
+function loadPreviousRunPDF(inputEl) {
+    const file = inputEl.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const typedArray = new Uint8Array(e.target.result);
+            const pdf = await pdfjsLib.getDocument(typedArray).promise;
+
+            // Try to read embedded JSON from PDF metadata first
+            const pdfMeta = await pdf.getMetadata();
+            let embedded = null;
+            // Check keywords field for embedded data
+            if (pdfMeta && pdfMeta.info && pdfMeta.info.Keywords) {
+                const kw = pdfMeta.info.Keywords;
+                const prefix = 'AmberTrolleyData:';
+                if (kw.startsWith(prefix)) {
+                    try {
+                        embedded = JSON.parse(kw.substring(prefix.length));
+                    } catch(ex) { /* fall through to text parsing */ }
+                }
+            }
+
+            if (embedded) {
+                previousRunData = embedded;
+            } else {
+                // Fallback: parse text from PDF pages
+                previousRunData = await parsePreviousRunFromText(pdf);
+            }
+
+            previousRunData.filename = file.name;
+            updateComparison();
+            buildSchematic();
+        } catch(err) {
+            alert('Error reading previous PDF: ' + err.message);
+            console.error(err);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+async function parsePreviousRunFromText(pdf) {
+    const result = { gaugeFaults: [], twistFaults: [], metadata: {}, lineSpeed: 0, trackCat: '' };
+    let allText = '';
+
+    for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        const pageText = content.items.map(item => item.str).join(' ');
+        allText += pageText + '\n';
+    }
+
+    // Extract line speed
+    const speedMatch = allText.match(/Line Speed:\s*(\d+)/);
+    if (speedMatch) result.lineSpeed = parseInt(speedMatch[1]);
+
+    // Extract track category
+    const catMatch = allText.match(/Track Cat:\s*(\w+)/);
+    if (catMatch) result.trackCat = catMatch[1];
+
+    // Extract route/track
+    const routeMatch = allText.match(/Route:\s*(\S+)/);
+    if (routeMatch) result.metadata['Route ID'] = routeMatch[1];
+
+    // Parse gauge fault rows (look for patterns like "21mi 1160.0yds")
+    const locationPattern = /(\d+)mi\s+([\d.]+)yds/g;
+    const gaugeFaultPattern = /(\d+)\s+(?:\*\s*)?(\d+mi\s+[\d.]+yds)\s+([\d]+mi\s+[\d.]+yds)\s+([\d.]+)\s+([\d.]+)\s+([+-][\d.]+)/g;
+
+    // Simplified: extract fault summary from the table data
+    // We look for patterns in the gauge faults page
+    const gaugeSection = allText.split(/Twist Faults/)[0] || allText;
+    const twistSection = allText.split(/Twist Faults/)[1] || '';
+
+    // Parse location pairs from gauge section
+    const gaugeLocs = [];
+    let locMatch;
+    const gLocRe = /(\d+)mi\s+([\d.]+)yds/g;
+    const gaugePart = gaugeSection.split(/Gauge Faults/)[1] || gaugeSection;
+    while ((locMatch = gLocRe.exec(gaugePart)) !== null) {
+        gaugeLocs.push({ miles: parseInt(locMatch[1]), yards: parseFloat(locMatch[2]) });
+    }
+    // Pair up as start/end (every 2 locations)
+    for (let i = 0; i + 1 < gaugeLocs.length; i += 2) {
+        result.gaugeFaults.push({
+            startMiles: gaugeLocs[i].miles, startYards: gaugeLocs[i].yards,
+            startLocation: gaugeLocs[i].miles + 'mi ' + gaugeLocs[i].yards.toFixed(1) + 'yds',
+            endMiles: gaugeLocs[i+1].miles, endYards: gaugeLocs[i+1].yards,
+            endLocation: gaugeLocs[i+1].miles + 'mi ' + gaugeLocs[i+1].yards.toFixed(1) + 'yds'
+        });
+    }
+
+    // Parse twist section
+    const twistLocs = [];
+    const tLocRe = /(\d+)mi\s+([\d.]+)yds/g;
+    while ((locMatch = tLocRe.exec(twistSection)) !== null) {
+        twistLocs.push({ miles: parseInt(locMatch[1]), yards: parseFloat(locMatch[2]) });
+    }
+    for (let i = 0; i + 1 < twistLocs.length; i += 2) {
+        result.twistFaults.push({
+            startMiles: twistLocs[i].miles, startYards: twistLocs[i].yards,
+            startLocation: twistLocs[i].miles + 'mi ' + twistLocs[i].yards.toFixed(1) + 'yds',
+            endMiles: twistLocs[i+1].miles, endYards: twistLocs[i+1].yards,
+            endLocation: twistLocs[i+1].miles + 'mi ' + twistLocs[i+1].yards.toFixed(1) + 'yds'
+        });
+    }
+
+    return result;
+}
+
+function clearPreviousRun() {
+    previousRunData = null;
+    document.getElementById('prevRunInput').value = '';
+    document.getElementById('comparisonResults').style.display = 'none';
+    document.getElementById('comparisonEmpty').style.display = 'block';
+    buildSchematic();
+}
+
+function updateComparison() {
+    if (!previousRunData) return;
+
+    const resultsDiv = document.getElementById('comparisonResults');
+    const emptyDiv = document.getElementById('comparisonEmpty');
+    emptyDiv.style.display = 'none';
+    resultsDiv.style.display = 'block';
+
+    const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
+    const trackCat = getTrackCat();
+    const allGF = gaugeFaults.concat(manualGaugeFaults);
+    const allTF = twistFaults.concat(manualTwistFaults);
+    const prevGF = previousRunData.gaugeFaults || [];
+    const prevTF = previousRunData.twistFaults || [];
+
+    // Compare faults by location overlap
+    function locOverlaps(a, b) {
+        const aStart = a.startMiles * 1760 + a.startYards;
+        const aEnd = (a.endMiles || a.startMiles) * 1760 + (a.endYards || a.startYards);
+        const bStart = b.startMiles * 1760 + b.startYards;
+        const bEnd = (b.endMiles || b.startMiles) * 1760 + (b.endYards || b.startYards);
+        return aStart <= bEnd + 5 && bStart <= aEnd + 5; // 5yd tolerance
+    }
+
+    // Categorise gauge faults
+    const gaugePersists = [], gaugeNew = [], gaugeResolved = [];
+    const prevGMatched = new Set();
+    allGF.forEach((f, i) => {
+        if (isDismissed('gauge', i)) return;
+        const match = prevGF.findIndex((pf, pi) => !prevGMatched.has(pi) && locOverlaps(f, pf));
+        if (match >= 0) {
+            prevGMatched.add(match);
+            gaugePersists.push({ current: f, previous: prevGF[match] });
+        } else {
+            gaugeNew.push(f);
+        }
+    });
+    prevGF.forEach((pf, i) => {
+        if (!prevGMatched.has(i)) gaugeResolved.push(pf);
+    });
+
+    // Categorise twist faults
+    const twistPersists = [], twistNew = [], twistResolved = [];
+    const prevTMatched = new Set();
+    allTF.forEach((f, i) => {
+        if (isDismissed('twist', i)) return;
+        const match = prevTF.findIndex((pf, pi) => !prevTMatched.has(pi) && locOverlaps(f, pf));
+        if (match >= 0) {
+            prevTMatched.add(match);
+            twistPersists.push({ current: f, previous: prevTF[match] });
+        } else {
+            twistNew.push(f);
+        }
+    });
+    prevTF.forEach((pf, i) => {
+        if (!prevTMatched.has(i)) twistResolved.push(pf);
+    });
+
+    let html = `
+        <div class="prev-run-info">
+            Previous run: <strong>${previousRunData.filename || 'Loaded PDF'}</strong>
+            ${previousRunData.metadata['Route ID'] ? ' | Route: ' + previousRunData.metadata['Route ID'] : ''}
+            ${previousRunData.lineSpeed ? ' | Speed: ' + previousRunData.lineSpeed + ' mph' : ''}
+            <button class="btn-clear-comparison" onclick="clearPreviousRun()">Remove</button>
+        </div>
+        <div class="comp-legend">
+            <span class="comp-new">New fault</span>
+            <span class="comp-resolved">Resolved</span>
+            <span class="comp-persists">Persisting</span>
+        </div>
+        <h4 style="font-size:13px;color:#1a1a2e;margin:12px 0 6px;">Gauge Faults Comparison</h4>
+    `;
+
+    if (gaugeNew.length + gaugeResolved.length + gaugePersists.length === 0) {
+        html += '<p style="color:#888;font-size:12px;">No gauge faults in either run.</p>';
+    } else {
+        html += '<table class="comparison-table"><thead><tr><th>Status</th><th>Location</th><th>Details</th></tr></thead><tbody>';
+        gaugeNew.forEach(f => {
+            const c = classifyGaugeFault(f.worstGauge, lineSpeed, trackCat);
+            html += `<tr class="comp-new"><td>NEW</td><td>${f.startLocation} - ${f.endLocation}</td><td>${f.worstGauge.toFixed(1)}mm ${c ? '(' + c.category + ')' : ''}</td></tr>`;
+        });
+        gaugePersists.forEach(p => {
+            const c = classifyGaugeFault(p.current.worstGauge, lineSpeed, trackCat);
+            html += `<tr class="comp-persists"><td>PERSISTS</td><td>${p.current.startLocation} - ${p.current.endLocation}</td><td>${p.current.worstGauge.toFixed(1)}mm ${c ? '(' + c.category + ')' : ''}</td></tr>`;
+        });
+        gaugeResolved.forEach(f => {
+            html += `<tr class="comp-resolved"><td>RESOLVED</td><td>${f.startLocation} - ${f.endLocation}</td><td>Not present in current run</td></tr>`;
+        });
+        html += '</tbody></table>';
+    }
+
+    html += '<h4 style="font-size:13px;color:#1a1a2e;margin:16px 0 6px;">Twist Faults Comparison</h4>';
+
+    if (twistNew.length + twistResolved.length + twistPersists.length === 0) {
+        html += '<p style="color:#888;font-size:12px;">No twist faults in either run.</p>';
+    } else {
+        html += '<table class="comparison-table"><thead><tr><th>Status</th><th>Location</th><th>Details</th></tr></thead><tbody>';
+        twistNew.forEach(f => {
+            const isLt = f.manual ? f.curveRadiusLessThan400 : false;
+            const c = classifyTwistFault(f.maxAbsTwist, lineSpeed, isLt);
+            html += `<tr class="comp-new"><td>NEW</td><td>${f.startLocation} - ${f.endLocation}</td><td>${f.maxAbsTwist.toFixed(1)}mm ${c ? '(' + c.category + ')' : ''}</td></tr>`;
+        });
+        twistPersists.forEach(p => {
+            const isLt = p.current.manual ? p.current.curveRadiusLessThan400 : false;
+            const c = classifyTwistFault(p.current.maxAbsTwist, lineSpeed, isLt);
+            html += `<tr class="comp-persists"><td>PERSISTS</td><td>${p.current.startLocation} - ${p.current.endLocation}</td><td>${p.current.maxAbsTwist.toFixed(1)}mm ${c ? '(' + c.category + ')' : ''}</td></tr>`;
+        });
+        twistResolved.forEach(f => {
+            html += `<tr class="comp-resolved"><td>RESOLVED</td><td>${f.startLocation} - ${f.endLocation}</td><td>Not present in current run</td></tr>`;
+        });
+        html += '</tbody></table>';
+    }
+
+    html += `<p style="margin-top:10px;font-size:11px;color:#888;">
+        Summary: ${gaugeNew.length + twistNew.length} new, ${gaugePersists.length + twistPersists.length} persisting, ${gaugeResolved.length + twistResolved.length} resolved
+    </p>`;
+
+    resultsDiv.innerHTML = html;
+}
+
 // ---- Export Excel ----
 function exportExcel() {
     const wb = XLSX.utils.book_new();
@@ -1695,6 +2145,7 @@ function exportExcel() {
         { Field: 'Run Name', Value: runName },
         { Field: 'Inspector', Value: inspector },
         { Field: 'Line Speed (mph)', Value: lineSpeed || 'Not set' },
+        { Field: 'Track Category', Value: getTrackCat() || 'Not set' },
         ...Object.entries(metadata).map(([k, v]) => ({ Field: k, Value: v }))
     ];
     const ws1 = XLSX.utils.json_to_sheet(metaArr);
@@ -1717,7 +2168,7 @@ function exportExcel() {
     const gaugeFaultNos = document.querySelectorAll('.fault-no-input[data-type="gauge"]');
     const gaugeRepeatCbs = document.querySelectorAll('.repeat-fault-cb[data-type="gauge"]');
     const gfData = allGaugeFaultsExport.map((f, i) => {
-        const c = classifyGaugeFault(f.worstGauge, lineSpeed);
+        const c = classifyGaugeFault(f.worstGauge, lineSpeed, getTrackCat());
         const dismissed = isDismissed('gauge', i);
         const row = {
             '#': i + 1,
@@ -1794,7 +2245,8 @@ function exportPDF() {
     doc.setTextColor(100);
     const route = metadata['Route ID'] || '';
     const track = metadata['Track ID'] || '';
-    doc.text(`Run Name: ${pdfRunName}  |  Inspector: ${pdfInspector}  |  Line Speed: ${lineSpeed || 'N/A'} mph`, 14, 28);
+    const pdfTrackCat = getTrackCat();
+    doc.text(`Run Name: ${pdfRunName}  |  Inspector: ${pdfInspector}  |  Line Speed: ${lineSpeed || 'N/A'} mph  |  Track Cat: ${pdfTrackCat || 'N/A'}`, 14, 28);
     doc.text(`Route: ${route}  |  Track: ${track}  |  ${metadata['Job Reference'] || ''}`, 14, 34);
     doc.text(`${metadata['Start Location'] || ''} to ${metadata['End Location'] || ''}`, 14, 40);
     doc.text(`Date: ${metadata['Start Time'] || ''}`, 14, 46);
@@ -1834,7 +2286,7 @@ function exportPDF() {
     doc.addPage();
     doc.setFontSize(14);
     doc.setTextColor(26, 26, 46);
-    doc.text('Gauge Faults (Table 5 Limits) - Line Speed: ' + (lineSpeed || 'N/A') + ' mph', 14, 20);
+    doc.text('Gauge Faults (Table 5 Limits) - Line Speed: ' + (lineSpeed || 'N/A') + ' mph - Track Cat: ' + (getTrackCat() || 'N/A'), 14, 20);
 
     const allGaugeFaultsPdf = gaugeFaults.concat(manualGaugeFaults);
     const pdfGaugeFaultNos = document.querySelectorAll('.fault-no-input[data-type="gauge"]');
@@ -1845,7 +2297,7 @@ function exportPDF() {
         doc.text('No gauge faults detected.', 14, 32);
     } else {
         const gaugeTableBody = allGaugeFaultsPdf.map((f, i) => {
-            const c = classifyGaugeFault(f.worstGauge, lineSpeed);
+            const c = classifyGaugeFault(f.worstGauge, lineSpeed, getTrackCat());
             const dismissed = isDismissed('gauge', i);
             const actionCol = dismissed
                 ? (c ? c.action : '') + '\n[DISMISSED ' + dismissed.displayTime + ' by ' + dismissed.inspector + ': ' + dismissed.comment + ']'
@@ -1958,6 +2410,34 @@ function exportPDF() {
     doc.text(`Date: ${document.getElementById('twistSignOffDate').value}`, 14, tSignY + 14);
     doc.text(`Signature: ${document.getElementById('twistSignOffSig').value}`, 120, tSignY + 8);
     doc.text(`Comments: ${document.getElementById('twistSignOffComments').value}`, 120, tSignY + 14);
+
+    // Embed fault data as JSON in PDF properties for run-on-run comparison
+    const allGFExportPdf = gaugeFaults.concat(manualGaugeFaults);
+    const allTFExportPdf = twistFaults.concat(manualTwistFaults);
+    const embedData = {
+        gaugeFaults: allGFExportPdf.map(f => ({
+            startMiles: f.startMiles, startYards: f.startYards,
+            endMiles: f.endMiles, endYards: f.endYards,
+            startLocation: f.startLocation, endLocation: f.endLocation,
+            worstGauge: f.worstGauge, deviation: f.deviation,
+            direction: f.direction, length: f.length
+        })),
+        twistFaults: allTFExportPdf.map(f => ({
+            startMiles: f.startMiles, startYards: f.startYards,
+            endMiles: f.endMiles, endYards: f.endYards,
+            startLocation: f.startLocation, endLocation: f.endLocation,
+            maxAbsTwist: f.maxAbsTwist, worstValue: f.worstValue, length: f.length
+        })),
+        metadata: { 'Route ID': metadata['Route ID'] || '', 'Track ID': metadata['Track ID'] || '' },
+        lineSpeed: lineSpeed,
+        trackCat: getTrackCat()
+    };
+    doc.setProperties({
+        title: 'Track Inspection Report - ' + (metadata['Route ID'] || ''),
+        subject: 'Amber Trolley Track Inspection',
+        creator: 'Amber Trolley Report Generator',
+        keywords: 'AmberTrolleyData:' + JSON.stringify(embedData)
+    });
 
     const filename = 'TrackInspection_' + (metadata['Route ID'] || 'Report') + '_' +
         (metadata['Track ID'] || '') + '.pdf';
