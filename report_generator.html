@@ -29,7 +29,7 @@
         .drop-zone .icon { font-size: 48px; margin-bottom: 12px; }
         .drop-zone input { display: none; }
 
-        .report-container { display: none; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .report-container { display: none; max-width: 1400px; margin: 0 auto; padding: 20px; }
         .report-container.active { display: block; }
 
         .toolbar {
@@ -81,17 +81,14 @@
         canvas { width: 100% !important; }
 
         table {
-            width: 100%; border-collapse: collapse; font-size: 13px;
+            width: 100%; border-collapse: collapse; font-size: 12px;
         }
         thead th {
-            background: #1a1a2e; color: #fff; padding: 10px 12px; text-align: left;
-            font-weight: 600; position: sticky; top: 0;
+            background: #1a1a2e; color: #fff; padding: 8px 10px; text-align: left;
+            font-weight: 600; position: sticky; top: 0; white-space: nowrap;
         }
-        tbody td { padding: 8px 12px; border-bottom: 1px solid #eee; }
+        tbody td { padding: 6px 10px; border-bottom: 1px solid #eee; }
         tbody tr:hover { background: #f8f9ff; }
-        .fault-gauge { background: #fff3cd; }
-        .fault-twist { background: #f8d7da; }
-        .fault-both { background: #fdd; }
 
         .summary-stats {
             display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -106,8 +103,18 @@
         .stat-card.warning .number { color: #e67e22; }
         .stat-card.danger .number { color: #c0392b; }
 
-        .fault-severity-1 { border-left: 4px solid #e67e22; }
-        .fault-severity-2 { border-left: 4px solid #c0392b; }
+        .cat-ial { background: #f8d7da; border-left: 4px solid #c0392b; }
+        .cat-ial-block { background: #f5c6cb; border-left: 4px solid #721c24; }
+        .cat-il { background: #fff3cd; border-left: 4px solid #e67e22; }
+        .cat-al { background: #d4edda; border-left: 4px solid #28a745; }
+
+        .badge {
+            display: inline-block; padding: 2px 8px; border-radius: 4px;
+            font-size: 11px; font-weight: 700; color: #fff; white-space: nowrap;
+        }
+        .badge-ial { background: #c0392b; }
+        .badge-il { background: #e67e22; }
+        .badge-al { background: #28a745; }
 
         .run-info-bar {
             display: flex; gap: 20px; align-items: center; margin-bottom: 20px;
@@ -115,12 +122,23 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.08); flex-wrap: wrap;
         }
         .run-info-bar label { font-size: 13px; color: #888; font-weight: 600; }
-        .run-info-bar input {
+        .run-info-bar input, .run-info-bar select {
             padding: 6px 12px; border: 1px solid #ccc; border-radius: 6px;
-            font-size: 14px; font-family: inherit; min-width: 200px;
+            font-size: 14px; font-family: inherit; min-width: 120px;
         }
-        .run-info-bar input:focus { outline: none; border-color: #4a6cf7; box-shadow: 0 0 0 2px rgba(74,108,247,0.15); }
+        .run-info-bar input:focus, .run-info-bar select:focus { outline: none; border-color: #4a6cf7; box-shadow: 0 0 0 2px rgba(74,108,247,0.15); }
         .run-info-group { display: flex; flex-direction: column; gap: 4px; }
+
+        .speed-warning {
+            display: none; padding: 10px 16px; background: #fff3cd; border: 1px solid #ffc107;
+            border-radius: 8px; margin-bottom: 16px; font-size: 13px; color: #856404;
+        }
+        .speed-warning.visible { display: block; }
+
+        .radius-select {
+            padding: 3px 6px; border: 1px solid #ccc; border-radius: 4px;
+            font-size: 11px; background: #fff; cursor: pointer;
+        }
 
         .sign-off-section {
             margin-top: 20px; padding: 20px; background: #fafafa; border: 2px solid #ddd;
@@ -137,6 +155,11 @@
             background: transparent; font-size: 14px; font-family: inherit;
         }
         .sign-off-field input:focus { outline: none; border-bottom-color: #4a6cf7; }
+
+        .note-box {
+            margin-top: 12px; padding: 10px 14px; background: #f8f9fa; border-left: 3px solid #6c757d;
+            font-size: 12px; color: #555; line-height: 1.5;
+        }
 
         @media print {
             .toolbar, .tabs { display: none; }
@@ -155,9 +178,10 @@
         <span>Drop HTML file here or click to browse</span>
         <input type="file" id="fileInput" accept=".html,.htm,.txt,.csv">
     </div>
-    <div style="margin-top: 30px; max-width: 500px;">
+    <div style="margin-top: 30px; max-width: 560px;">
         <p style="font-size: 13px; color: #999; text-align: center;">
-            Identifies gauge faults (&lt;1430mm) and twist faults (|Twist 1| &gt; 11mm over 3m) with continuous fault ranging.
+            Classifies twist and gauge faults against Table 3 &amp; Table 5 limits
+            (IAL / IL / AL) with speed-dependent thresholds and remedial actions.
             Export as Excel or PDF.
         </p>
     </div>
@@ -180,6 +204,14 @@
             <label>Inspector</label>
             <input type="text" id="inspectorInput" placeholder="Enter inspector name...">
         </div>
+        <div class="run-info-group">
+            <label>Line Speed (mph)</label>
+            <input type="number" id="lineSpeedInput" placeholder="e.g. 75" min="5" max="125" style="width:100px;">
+        </div>
+    </div>
+
+    <div class="speed-warning" id="speedWarning">
+        Please enter a Line Speed (5-125 mph) above to classify faults against the correct thresholds.
     </div>
 
     <div class="tabs">
@@ -210,9 +242,9 @@
     <!-- Page 2: Gauge Faults -->
     <div class="page" id="page-gaugeFaults">
         <div class="card">
-            <h3>Gauge Faults (Gauge &lt; 1430mm)</h3>
+            <h3>Gauge Faults (Table 5 Limits)</h3>
             <p style="margin-bottom: 12px; color: #666; font-size: 13px;">
-                Continuous fault ranges are grouped by start and end mileage.
+                Wide gauge and tight gauge faults classified per Table 5 thresholds for the configured line speed.
             </p>
             <div style="overflow-x: auto;">
                 <table id="gaugeFaultTable">
@@ -223,12 +255,19 @@
                             <th>Start Location</th>
                             <th>End Location</th>
                             <th>Length (yds)</th>
-                            <th>Min Gauge (mm)</th>
-                            <th>Worst Deviation (mm)</th>
+                            <th>Worst Gauge (mm)</th>
+                            <th>Deviation (mm)</th>
+                            <th>Fault Type</th>
+                            <th>Category</th>
+                            <th>Required Action</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
                 </table>
+            </div>
+            <div class="note-box">
+                <strong>Note 1:</strong> These actions assume no significant associated faults at the same location. If other faults exist, complete the action to a shorter timescale.<br>
+                <strong>Note 2:</strong> These are based upon nominal gauge for that type of track. Any design gauge widening is to be added to the lower limit for the action threshold.
             </div>
             <div class="sign-off-section">
                 <h4>Section Manager Sign-Off</h4>
@@ -257,9 +296,9 @@
     <!-- Page 3: Twist Faults -->
     <div class="page" id="page-twistFaults">
         <div class="card">
-            <h3>Twist Faults (|Twist 1| &gt; 11mm over 3m)</h3>
+            <h3>Twist Faults - 3m Base (Table 3 Limits)</h3>
             <p style="margin-bottom: 12px; color: #666; font-size: 13px;">
-                Twist 1 values exceeding &plusmn;11mm over 3m base. Continuous ranges grouped.
+                Twist faults classified per Table 3 thresholds. Set the curve radius toggle per fault to adjust IL timescales.
             </p>
             <div style="overflow-x: auto;">
                 <table id="twistFaultTable">
@@ -270,12 +309,19 @@
                             <th>Start Location</th>
                             <th>End Location</th>
                             <th>Length (yds)</th>
-                            <th>Max |Twist 1| (mm)</th>
+                            <th>Max |Twist| (mm)</th>
                             <th>Worst Value (mm)</th>
+                            <th>Curve Radius</th>
+                            <th>Category</th>
+                            <th>Required Action</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
                 </table>
+            </div>
+            <div class="note-box">
+                <strong>Note 1:</strong> Where twist faults at Intervention Limit or above are adjacent to structures with tight clearances, complete the action to a shorter timescale.<br>
+                <strong>Note 2:</strong> These actions assume no significant associated faults at the same location. If other faults exist, complete the action to a shorter timescale.
             </div>
             <div class="sign-off-section">
                 <h4>Section Manager Sign-Off</h4>
@@ -311,6 +357,211 @@ let metadata = {};
 let gaugeChartInstance = null;
 let twistChartInstance = null;
 
+// Per-fault curve radius settings (indexed by fault index)
+let twistFaultRadiusSettings = []; // true = <400m, false = >=400m
+
+// ---- Table 3: Twist Fault Limits (3m base) ----
+function classifyTwistFault(absValue, lineSpeed, curveRadiusLessThan400) {
+    if (!lineSpeed || lineSpeed < 5) return null;
+
+    // IAL - Block the line: all speeds, >= 33mm
+    if (absValue >= 33) {
+        return { category: 'IAL', badge: 'badge-ial', rowClass: 'cat-ial-block',
+            action: 'BLOCK THE LINE - Correct before opening to traffic' };
+    }
+
+    // IAL - Correct within 36 hours
+    if (lineSpeed <= 75 && absValue >= 24 && absValue < 33) {
+        return { category: 'IAL', badge: 'badge-ial', rowClass: 'cat-ial',
+            action: 'Correct within 36 hours' };
+    }
+    if (lineSpeed >= 80 && absValue >= 21 && absValue < 33) {
+        return { category: 'IAL', badge: 'badge-ial', rowClass: 'cat-ial',
+            action: 'Correct within 36 hours' };
+    }
+
+    // IL - Curve radius < 400m (max 65mph)
+    if (curveRadiusLessThan400 && lineSpeed <= 65) {
+        if (absValue >= 18 && absValue < 24) {
+            return { category: 'IL', badge: 'badge-il', rowClass: 'cat-il',
+                action: 'Correct within 7 days' };
+        }
+        if (absValue >= 15 && absValue < 18) {
+            return { category: 'IL', badge: 'badge-il', rowClass: 'cat-il',
+                action: 'Correct within 10 days' };
+        }
+    }
+
+    // IL - Curve radius >= 400m (or < 400m but speed > 65 falls through to these)
+    if (!curveRadiusLessThan400 || lineSpeed > 65) {
+        if (lineSpeed <= 75) {
+            if (absValue >= 21 && absValue < 24) {
+                return { category: 'IL', badge: 'badge-il', rowClass: 'cat-il',
+                    action: 'Correct within 14 days' };
+            }
+            if (absValue >= 18 && absValue < 21) {
+                return { category: 'IL', badge: 'badge-il', rowClass: 'cat-il',
+                    action: 'Correct within 21 days' };
+            }
+            if (absValue >= 15 && absValue < 18) {
+                return { category: 'IL', badge: 'badge-il', rowClass: 'cat-il',
+                    action: 'Correct within 28 days' };
+            }
+        }
+        if (lineSpeed >= 80) {
+            if (absValue >= 18 && absValue < 21) {
+                return { category: 'IL', badge: 'badge-il', rowClass: 'cat-il',
+                    action: 'Correct within 14 days' };
+            }
+            if (absValue >= 15 && absValue < 18) {
+                return { category: 'IL', badge: 'badge-il', rowClass: 'cat-il',
+                    action: 'Correct within 21 days' };
+            }
+        }
+    }
+
+    // AL - All speeds: 12mm to < 15mm
+    if (absValue >= 12 && absValue < 15) {
+        return { category: 'AL', badge: 'badge-al', rowClass: 'cat-al',
+            action: 'Monitor (Alert Limit)' };
+    }
+
+    return null;
+}
+
+// ---- Table 5: Gauge Fault Limits ----
+function classifyGaugeFault(gaugeValue, lineSpeed) {
+    if (!lineSpeed || lineSpeed < 5) return null;
+
+    // --- WIDE GAUGE (gauge above nominal 1435mm) ---
+    if (gaugeValue >= 1435) {
+
+        // IAL - Block the line (Static plus dynamic movement)
+        if (lineSpeed >= 105 && gaugeValue >= 1472) {
+            return { category: 'IAL', type: 'Wide Gauge', badge: 'badge-ial', rowClass: 'cat-ial-block',
+                action: 'BLOCK THE LINE - Correct before opening to traffic' };
+        }
+        if (lineSpeed <= 100 && gaugeValue >= 1478) {
+            return { category: 'IAL', type: 'Wide Gauge', badge: 'badge-ial', rowClass: 'cat-ial-block',
+                action: 'BLOCK THE LINE - Correct before opening to traffic' };
+        }
+
+        // IAL - Correct within 36 hours (Static plus dynamic movement)
+        if (lineSpeed >= 105 && gaugeValue >= 1463 && gaugeValue < 1472) {
+            return { category: 'IAL', type: 'Wide Gauge', badge: 'badge-ial', rowClass: 'cat-ial',
+                action: 'Correct within 36 hours' };
+        }
+        if (lineSpeed <= 100 && gaugeValue >= 1470 && gaugeValue < 1478) {
+            return { category: 'IAL', type: 'Wide Gauge', badge: 'badge-ial', rowClass: 'cat-ial',
+                action: 'Correct within 36 hours' };
+        }
+
+        // IAL - Correct within 36 hours (Static Wide Gauge)
+        if (lineSpeed > 25 && gaugeValue >= 1458 && gaugeValue <= 1471) {
+            return { category: 'IAL', type: 'Static Wide Gauge', badge: 'badge-ial', rowClass: 'cat-ial',
+                action: 'Correct within 36 hours' };
+        }
+        if (lineSpeed <= 25 && gaugeValue >= 1460 && gaugeValue <= 1477) {
+            return { category: 'IAL', type: 'Static Wide Gauge', badge: 'badge-ial', rowClass: 'cat-ial',
+                action: 'Correct within 36 hours' };
+        }
+
+        // IL - Wide Gauge (Static plus dynamic movement)
+        if (lineSpeed >= 105 && gaugeValue >= 1458 && gaugeValue < 1463) {
+            return { category: 'IL', type: 'Wide Gauge', badge: 'badge-il', rowClass: 'cat-il',
+                action: 'Track Cat 1A-3: correct within 14 days; Cat 4-6: correct within 28 days' };
+        }
+        if (lineSpeed <= 100 && gaugeValue >= 1460 && gaugeValue < 1470) {
+            return { category: 'IL', type: 'Wide Gauge', badge: 'badge-il', rowClass: 'cat-il',
+                action: 'Track Cat 1A-3: correct within 14 days; Cat 4-6: correct within 28 days' };
+        }
+
+        // IL - Static Wide Gauge
+        if (lineSpeed >= 30 && gaugeValue >= 1450 && gaugeValue < 1458) {
+            return { category: 'IL', type: 'Static Wide Gauge', badge: 'badge-il', rowClass: 'cat-il',
+                action: 'Correct within 14 days' };
+        }
+        if (lineSpeed <= 25 && gaugeValue >= 1450 && gaugeValue < 1460) {
+            return { category: 'IL', type: 'Static Wide Gauge', badge: 'badge-il', rowClass: 'cat-il',
+                action: 'Correct within 14 days' };
+        }
+
+        // AL - Wide Gauge (Static plus dynamic movement)
+        if (lineSpeed >= 105 && gaugeValue >= 1450 && gaugeValue < 1458) {
+            return { category: 'AL', type: 'Wide Gauge', badge: 'badge-al', rowClass: 'cat-al',
+                action: 'Monitor (Alert Limit)' };
+        }
+        if (lineSpeed >= 30 && lineSpeed <= 100 && gaugeValue >= 1450 && gaugeValue < 1460) {
+            return { category: 'AL', type: 'Wide Gauge', badge: 'badge-al', rowClass: 'cat-al',
+                action: 'Monitor (Alert Limit)' };
+        }
+        if (lineSpeed <= 25 && gaugeValue >= 1455 && gaugeValue < 1460) {
+            return { category: 'AL', type: 'Wide Gauge', badge: 'badge-al', rowClass: 'cat-al',
+                action: 'Monitor (Alert Limit)' };
+        }
+
+        // AL - Static Wide Gauge (all speeds)
+        if (gaugeValue >= 1445 && gaugeValue < 1450) {
+            return { category: 'AL', type: 'Static Wide Gauge', badge: 'badge-al', rowClass: 'cat-al',
+                action: 'Monitor (Alert Limit)' };
+        }
+    }
+
+    // --- TIGHT GAUGE (gauge below nominal) ---
+    if (gaugeValue < 1435) {
+
+        // IL - Tight Gauge (severe)
+        if (lineSpeed >= 105 && gaugeValue <= 1426) {
+            return { category: 'IL', type: 'Tight Gauge', badge: 'badge-il', rowClass: 'cat-il',
+                action: 'Inspect within 14 days, correct within 84 days' };
+        }
+        if (lineSpeed <= 100 && gaugeValue <= 1422) {
+            return { category: 'IL', type: 'Tight Gauge', badge: 'badge-il', rowClass: 'cat-il',
+                action: 'Inspect within 14 days, correct within 84 days' };
+        }
+
+        // IL - Tight Gauge (review for hunting/rough rides)
+        if (lineSpeed >= 105 && gaugeValue > 1426 && gaugeValue <= 1428) {
+            return { category: 'IL', type: 'Tight Gauge', badge: 'badge-il', rowClass: 'cat-il',
+                action: 'Review for reports of Hunting or Rough Rides within 28 days' };
+        }
+        if (lineSpeed <= 100 && gaugeValue > 1422 && gaugeValue <= 1424) {
+            return { category: 'IL', type: 'Tight Gauge', badge: 'badge-il', rowClass: 'cat-il',
+                action: 'Review for reports of Hunting or Rough Rides within 28 days' };
+        }
+
+        // AL - Tight Gauge
+        if (lineSpeed >= 105 && gaugeValue > 1428 && gaugeValue <= 1430) {
+            return { category: 'AL', type: 'Tight Gauge', badge: 'badge-al', rowClass: 'cat-al',
+                action: 'Monitor (Alert Limit)' };
+        }
+        if (lineSpeed <= 100 && gaugeValue > 1424 && gaugeValue <= 1426) {
+            return { category: 'AL', type: 'Tight Gauge', badge: 'badge-al', rowClass: 'cat-al',
+                action: 'Monitor (Alert Limit)' };
+        }
+    }
+
+    return null;
+}
+
+// Get the detection thresholds for gauge based on line speed
+function getGaugeDetectionThresholds(lineSpeed) {
+    if (!lineSpeed || lineSpeed < 5) {
+        // Default broadest thresholds
+        return { tightBelow: 1430, wideAbove: 1445 };
+    }
+    if (lineSpeed >= 105) {
+        return { tightBelow: 1430, wideAbove: 1445 };
+    }
+    // 5 to 100mph
+    return { tightBelow: 1426, wideAbove: 1445 };
+}
+
+// Get the detection threshold for twist (lowest AL = 12mm)
+function getTwistDetectionThreshold() {
+    return 12;
+}
+
 // ---- Upload ----
 const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
@@ -344,7 +595,6 @@ function handleFile(file) {
 
 // ---- Parsing ----
 function parseData(content) {
-    // Try to extract from HTML table or treat as tab-separated text
     let lines;
     if (content.includes('<table') || content.includes('<TABLE')) {
         lines = parseHTMLTable(content);
@@ -363,7 +613,6 @@ function parseData(content) {
             ? line.split('\t').map(c => c.trim())
             : lines[i].map(c => (c || '').trim());
 
-        // Detect column header row
         if (!headerFound && cells[0] === 'Miles' && cells[1] === 'Yards') {
             headerFound = true;
             columnHeaders = cells;
@@ -371,14 +620,12 @@ function parseData(content) {
         }
 
         if (!headerFound) {
-            // Parse metadata - key/value pairs
             if (cells.length >= 2 && cells[0] && cells[1]) {
                 metadata[cells[0]] = cells[1];
             } else if (cells.length === 1 && cells[0].includes('\t')) {
                 const parts = cells[0].split('\t');
                 if (parts.length >= 2) metadata[parts[0].trim()] = parts[1].trim();
             }
-            // Also try colon-separated on single string
             if (typeof lines[i] === 'string' && !cells[1] && line.includes('\t')) {
                 const parts = line.split('\t');
                 if (parts.length >= 2 && parts[0].trim()) {
@@ -388,7 +635,6 @@ function parseData(content) {
             continue;
         }
 
-        // Parse data row
         if (headerFound && cells[0] && !isNaN(parseFloat(cells[0]))) {
             const row = {
                 miles: parseFloat(cells[0]),
@@ -412,9 +658,7 @@ function parseData(content) {
         throw new Error('No measurement data rows found. Check file format.');
     }
 
-    // Identify faults
-    identifyGaugeFaults();
-    identifyTwistFaults();
+    identifyFaults();
 }
 
 function parseHTMLTable(html) {
@@ -435,39 +679,47 @@ function formatLocation(row) {
 }
 
 // ---- Fault Identification ----
-function identifyGaugeFaults() {
+function identifyFaults() {
+    const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
+    identifyGaugeFaults(lineSpeed);
+    identifyTwistFaults();
+}
+
+function identifyGaugeFaults(lineSpeed) {
     gaugeFaults = [];
+    const thresholds = getGaugeDetectionThresholds(lineSpeed);
     let inFault = false;
     let currentFault = null;
 
     for (let i = 0; i < parsedData.length; i++) {
         const row = parsedData[i];
-        if (row.gauge < 1430) {
+        const isTight = row.gauge <= thresholds.tightBelow;
+        const isWide = row.gauge >= thresholds.wideAbove;
+        const isFault = isTight || isWide;
+
+        if (isFault) {
             if (!inFault) {
                 currentFault = {
                     startIdx: i,
                     startLocation: formatLocation(row),
                     startMiles: row.miles,
                     startYards: row.yards,
-                    minGauge: row.gauge,
-                    worstDeviation: 1430 - row.gauge,
+                    worstGauge: row.gauge,
+                    direction: isWide ? 'wide' : 'tight',
                     rows: [row]
                 };
                 inFault = true;
             } else {
                 currentFault.rows.push(row);
-                if (row.gauge < currentFault.minGauge) {
-                    currentFault.minGauge = row.gauge;
-                    currentFault.worstDeviation = 1430 - row.gauge;
+                if (currentFault.direction === 'wide') {
+                    if (row.gauge > currentFault.worstGauge) currentFault.worstGauge = row.gauge;
+                } else {
+                    if (row.gauge < currentFault.worstGauge) currentFault.worstGauge = row.gauge;
                 }
             }
         } else {
             if (inFault) {
-                const lastRow = currentFault.rows[currentFault.rows.length - 1];
-                currentFault.endLocation = formatLocation(lastRow);
-                currentFault.endMiles = lastRow.miles;
-                currentFault.endYards = lastRow.yards;
-                currentFault.length = (currentFault.endYards - currentFault.startYards).toFixed(1);
+                finishGaugeFault(currentFault);
                 gaugeFaults.push(currentFault);
                 inFault = false;
                 currentFault = null;
@@ -475,26 +727,35 @@ function identifyGaugeFaults() {
         }
     }
     if (inFault) {
-        const lastRow = currentFault.rows[currentFault.rows.length - 1];
-        currentFault.endLocation = formatLocation(lastRow);
-        currentFault.endMiles = lastRow.miles;
-        currentFault.endYards = lastRow.yards;
-        currentFault.length = (currentFault.endYards - currentFault.startYards).toFixed(1);
+        finishGaugeFault(currentFault);
         gaugeFaults.push(currentFault);
     }
 }
 
+function finishGaugeFault(fault) {
+    const lastRow = fault.rows[fault.rows.length - 1];
+    fault.endLocation = formatLocation(lastRow);
+    fault.endMiles = lastRow.miles;
+    fault.endYards = lastRow.yards;
+    fault.length = (fault.endYards - fault.startYards).toFixed(1);
+    if (fault.direction === 'wide') {
+        fault.deviation = '+' + (fault.worstGauge - 1435).toFixed(1);
+    } else {
+        fault.deviation = '-' + (1435 - fault.worstGauge).toFixed(1);
+    }
+}
+
 function identifyTwistFaults() {
-    // Twist fault: any row where |Twist 1| > 11mm
-    const TWIST_THRESHOLD = 11;
+    const threshold = getTwistDetectionThreshold();
     twistFaults = [];
+    twistFaultRadiusSettings = [];
     let inFault = false;
     let currentFault = null;
 
     for (let i = 0; i < parsedData.length; i++) {
         const row = parsedData[i];
         const hasTwist = row.twist1 !== null && !isNaN(row.twist1) &&
-            (row.twist1 > TWIST_THRESHOLD || row.twist1 < -TWIST_THRESHOLD);
+            Math.abs(row.twist1) >= threshold;
 
         if (hasTwist) {
             if (!inFault) {
@@ -523,6 +784,7 @@ function identifyTwistFaults() {
                 currentFault.endYards = lastRow.yards;
                 currentFault.length = (currentFault.endYards - currentFault.startYards).toFixed(1);
                 twistFaults.push(currentFault);
+                twistFaultRadiusSettings.push(false); // default: >= 400m
                 inFault = false;
                 currentFault = null;
             }
@@ -535,15 +797,14 @@ function identifyTwistFaults() {
         currentFault.endYards = lastRow.yards;
         currentFault.length = (currentFault.endYards - currentFault.startYards).toFixed(1);
         twistFaults.push(currentFault);
+        twistFaultRadiusSettings.push(false);
     }
 }
 
 // ---- Build Report ----
 function buildReport() {
-    // Title
     const route = metadata['Route ID'] || '';
     const track = metadata['Track ID'] || '';
-    const jobRef = metadata['Job Reference'] || '';
     document.getElementById('reportTitle').textContent =
         'Track Inspection Report' + (route ? ' - ' + route : '') + (track ? ' / ' + track : '');
 
@@ -562,29 +823,11 @@ function buildReport() {
         }
     });
 
-    // Summary stats
-    const statsDiv = document.getElementById('summaryStats');
-    const totalPoints = parsedData.length;
-    const minGauge = Math.min(...parsedData.map(r => r.gauge));
-    const maxGauge = Math.max(...parsedData.map(r => r.gauge));
-    const twistValues = parsedData.filter(r => r.twist1 !== null).map(r => r.twist1);
-    const maxTwist = twistValues.length ? Math.max(...twistValues.map(v => Math.abs(v))) : 0;
-
-    statsDiv.innerHTML = `
-        <div class="stat-card"><div class="number">${totalPoints}</div><div class="label">Data Points</div></div>
-        <div class="stat-card ${gaugeFaults.length > 0 ? 'danger' : ''}"><div class="number">${gaugeFaults.length}</div><div class="label">Gauge Fault Ranges</div></div>
-        <div class="stat-card ${twistFaults.length > 0 ? 'warning' : ''}"><div class="number">${twistFaults.length}</div><div class="label">Twist Fault Ranges</div></div>
-        <div class="stat-card"><div class="number">${minGauge.toFixed(1)}</div><div class="label">Min Gauge (mm)</div></div>
-        <div class="stat-card"><div class="number">${maxGauge.toFixed(1)}</div><div class="label">Max Gauge (mm)</div></div>
-        <div class="stat-card"><div class="number">${maxTwist.toFixed(1)}</div><div class="label">Max |Twist 1| (mm)</div></div>
-    `;
-
-    // Charts
+    updateSummaryStats();
     buildCharts();
-
-    // Fault tables
     buildGaugeFaultTable();
     buildTwistFaultTable();
+    updateSpeedWarning();
 
     // Tab handling
     document.querySelectorAll('.tab').forEach(tab => {
@@ -595,63 +838,100 @@ function buildReport() {
             document.getElementById('page-' + tab.dataset.page).classList.add('active');
         });
     });
+
+    // Line speed change handler
+    document.getElementById('lineSpeedInput').addEventListener('change', onLineSpeedChange);
+    document.getElementById('lineSpeedInput').addEventListener('input', onLineSpeedChange);
+}
+
+function onLineSpeedChange() {
+    identifyFaults();
+    updateSummaryStats();
+    buildGaugeFaultTable();
+    buildTwistFaultTable();
+    buildCharts();
+    updateSpeedWarning();
+}
+
+function updateSpeedWarning() {
+    const speed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
+    const warning = document.getElementById('speedWarning');
+    if (speed < 5) {
+        warning.classList.add('visible');
+    } else {
+        warning.classList.remove('visible');
+    }
+}
+
+function updateSummaryStats() {
+    const statsDiv = document.getElementById('summaryStats');
+    const totalPoints = parsedData.length;
+    const minGauge = Math.min(...parsedData.map(r => r.gauge));
+    const maxGauge = Math.max(...parsedData.map(r => r.gauge));
+    const twistValues = parsedData.filter(r => r.twist1 !== null).map(r => r.twist1);
+    const maxTwist = twistValues.length ? Math.max(...twistValues.map(v => Math.abs(v))) : 0;
+
+    const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
+    const ialGauge = gaugeFaults.filter(f => { const c = classifyGaugeFault(f.worstGauge, lineSpeed); return c && c.category === 'IAL'; }).length;
+    const ialTwist = twistFaults.filter((f, i) => { const c = classifyTwistFault(f.maxAbsTwist, lineSpeed, twistFaultRadiusSettings[i]); return c && c.category === 'IAL'; }).length;
+
+    statsDiv.innerHTML = `
+        <div class="stat-card"><div class="number">${totalPoints}</div><div class="label">Data Points</div></div>
+        <div class="stat-card ${gaugeFaults.length > 0 ? 'danger' : ''}"><div class="number">${gaugeFaults.length}</div><div class="label">Gauge Faults</div></div>
+        <div class="stat-card ${twistFaults.length > 0 ? 'warning' : ''}"><div class="number">${twistFaults.length}</div><div class="label">Twist Faults</div></div>
+        <div class="stat-card ${ialGauge + ialTwist > 0 ? 'danger' : ''}"><div class="number">${ialGauge + ialTwist}</div><div class="label">IAL Faults</div></div>
+        <div class="stat-card"><div class="number">${minGauge.toFixed(1)}</div><div class="label">Min Gauge (mm)</div></div>
+        <div class="stat-card"><div class="number">${maxTwist.toFixed(1)}</div><div class="label">Max |Twist| (mm)</div></div>
+    `;
 }
 
 function buildCharts() {
+    const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
     const labels = parsedData.map(r => r.miles + 'mi ' + r.yards.toFixed(0) + 'y');
-    // Thin labels for readability - show every Nth
     const step = Math.max(1, Math.floor(parsedData.length / 30));
     const displayLabels = labels.map((l, i) => i % step === 0 ? l : '');
+
+    const gaugeThresholds = getGaugeDetectionThresholds(lineSpeed);
+    const twistThreshold = getTwistDetectionThreshold();
 
     // Gauge chart
     const gaugeCtx = document.getElementById('gaugeChart').getContext('2d');
     if (gaugeChartInstance) gaugeChartInstance.destroy();
+
+    const gaugeDatasets = [
+        {
+            label: 'Gauge (mm)',
+            data: parsedData.map(r => r.gauge),
+            borderColor: '#4a6cf7',
+            backgroundColor: 'rgba(74,108,247,0.1)',
+            fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.3
+        },
+        {
+            label: 'Reference (1435mm)',
+            data: parsedData.map(() => 1435),
+            borderColor: '#28a745', borderWidth: 1, borderDash: [6, 4], pointRadius: 0, fill: false
+        },
+        {
+            label: 'Wide Gauge AL (' + gaugeThresholds.wideAbove + 'mm)',
+            data: parsedData.map(() => gaugeThresholds.wideAbove),
+            borderColor: '#f39c12', borderWidth: 1, borderDash: [4, 4], pointRadius: 0, fill: false
+        },
+        {
+            label: 'Tight Gauge AL (' + gaugeThresholds.tightBelow + 'mm)',
+            data: parsedData.map(() => gaugeThresholds.tightBelow),
+            borderColor: '#c0392b', borderWidth: 1.5, borderDash: [4, 4], pointRadius: 0, fill: false
+        }
+    ];
+
     gaugeChartInstance = new Chart(gaugeCtx, {
         type: 'line',
-        data: {
-            labels: displayLabels,
-            datasets: [
-                {
-                    label: 'Gauge (mm)',
-                    data: parsedData.map(r => r.gauge),
-                    borderColor: '#4a6cf7',
-                    backgroundColor: 'rgba(74,108,247,0.1)',
-                    fill: true,
-                    borderWidth: 1.5,
-                    pointRadius: 0,
-                    tension: 0.3
-                },
-                {
-                    label: 'Reference (1435mm)',
-                    data: parsedData.map(() => 1435),
-                    borderColor: '#28a745',
-                    borderWidth: 1,
-                    borderDash: [6, 4],
-                    pointRadius: 0,
-                    fill: false
-                },
-                {
-                    label: 'Fault Threshold (1430mm)',
-                    data: parsedData.map(() => 1430),
-                    borderColor: '#c0392b',
-                    borderWidth: 1.5,
-                    borderDash: [4, 4],
-                    pointRadius: 0,
-                    fill: false
-                }
-            ]
-        },
+        data: { labels: displayLabels, datasets: gaugeDatasets },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
+            responsive: true, maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
             plugins: {
                 legend: { position: 'top', labels: { usePointStyle: true, padding: 16 } },
-                tooltip: {
-                    callbacks: {
-                        title: (items) => labels[items[0].dataIndex]
-                    }
-                }
+                tooltip: { callbacks: { title: (items) => labels[items[0].dataIndex] } }
             },
             scales: {
                 x: { ticks: { maxRotation: 45, font: { size: 10 } } },
@@ -660,11 +940,11 @@ function buildCharts() {
         }
     });
 
-    // Twist chart - only plot Twist 1 values, show null gaps
+    // Twist chart
     const twist1Data = parsedData.map(r => r.twist1);
-
     const twistCtx = document.getElementById('twistChart').getContext('2d');
     if (twistChartInstance) twistChartInstance.destroy();
+
     twistChartInstance = new Chart(twistCtx, {
         type: 'line',
         data: {
@@ -673,36 +953,32 @@ function buildCharts() {
                 {
                     label: 'Twist 1 - 3m (mm)',
                     data: twist1Data,
-                    borderColor: '#e67e22',
-                    backgroundColor: 'rgba(230,126,34,0.1)',
-                    fill: true,
-                    borderWidth: 1.5,
-                    pointRadius: 0,
-                    tension: 0.3,
-                    spanGaps: false
+                    borderColor: '#e67e22', backgroundColor: 'rgba(230,126,34,0.1)',
+                    fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.3, spanGaps: false
                 },
                 {
                     label: 'Zero line',
                     data: parsedData.map(() => 0),
-                    borderColor: '#aaa',
-                    borderWidth: 1,
-                    borderDash: [3, 3],
-                    pointRadius: 0,
-                    fill: false
+                    borderColor: '#aaa', borderWidth: 1, borderDash: [3, 3], pointRadius: 0, fill: false
+                },
+                {
+                    label: '+AL (' + twistThreshold + 'mm)',
+                    data: parsedData.map(() => twistThreshold),
+                    borderColor: '#28a745', borderWidth: 1, borderDash: [4, 4], pointRadius: 0, fill: false
+                },
+                {
+                    label: '-AL (-' + twistThreshold + 'mm)',
+                    data: parsedData.map(() => -twistThreshold),
+                    borderColor: '#28a745', borderWidth: 1, borderDash: [4, 4], pointRadius: 0, fill: false
                 }
             ]
         },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
+            responsive: true, maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
             plugins: {
                 legend: { position: 'top', labels: { usePointStyle: true, padding: 16 } },
-                tooltip: {
-                    callbacks: {
-                        title: (items) => labels[items[0].dataIndex]
-                    }
-                }
+                tooltip: { callbacks: { title: (items) => labels[items[0].dataIndex] } }
             },
             scales: {
                 x: { ticks: { maxRotation: 45, font: { size: 10 } } },
@@ -713,49 +989,84 @@ function buildCharts() {
 }
 
 function buildGaugeFaultTable() {
+    const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
     const tbody = document.querySelector('#gaugeFaultTable tbody');
     tbody.innerHTML = '';
     if (gaugeFaults.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;color:#888;">No gauge faults detected</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:30px;color:#888;">No gauge faults detected</td></tr>';
         return;
     }
     gaugeFaults.forEach((f, idx) => {
+        const classification = classifyGaugeFault(f.worstGauge, lineSpeed);
         const tr = document.createElement('tr');
-        tr.className = f.worstDeviation > 5 ? 'fault-severity-2' : 'fault-severity-1';
+        tr.className = classification ? classification.rowClass : '';
+        const catBadge = classification
+            ? `<span class="badge ${classification.badge}">${classification.category}</span>`
+            : '<span style="color:#999;">--</span>';
+        const faultType = classification ? classification.type : (f.direction === 'wide' ? 'Wide Gauge' : 'Tight Gauge');
+        const actionText = classification ? classification.action : (lineSpeed < 5 ? 'Set line speed' : 'Below threshold');
+
         tr.innerHTML = `
             <td>${idx + 1}</td>
-            <td><input type="text" class="fault-no-input" data-type="gauge" data-idx="${idx}" placeholder="--" style="width:60px;padding:4px 6px;border:1px solid #ccc;border-radius:4px;font-size:12px;text-align:center;"></td>
+            <td><input type="text" class="fault-no-input" data-type="gauge" data-idx="${idx}" placeholder="--" style="width:55px;padding:3px 5px;border:1px solid #ccc;border-radius:4px;font-size:11px;text-align:center;"></td>
             <td>${f.startLocation}</td>
             <td>${f.endLocation}</td>
             <td>${f.length}</td>
-            <td>${f.minGauge.toFixed(1)}</td>
-            <td>-${f.worstDeviation.toFixed(1)}</td>
+            <td>${f.worstGauge.toFixed(1)}</td>
+            <td>${f.deviation}</td>
+            <td>${faultType}</td>
+            <td>${catBadge}</td>
+            <td style="font-size:11px;max-width:220px;">${actionText}</td>
         `;
         tbody.appendChild(tr);
     });
 }
 
 function buildTwistFaultTable() {
+    const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
     const tbody = document.querySelector('#twistFaultTable tbody');
     tbody.innerHTML = '';
     if (twistFaults.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;color:#888;">No twist faults detected</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:30px;color:#888;">No twist faults detected</td></tr>';
         return;
     }
     twistFaults.forEach((f, idx) => {
+        const isLessThan400 = twistFaultRadiusSettings[idx];
+        const classification = classifyTwistFault(f.maxAbsTwist, lineSpeed, isLessThan400);
         const tr = document.createElement('tr');
-        tr.className = f.maxAbsTwist > 10 ? 'fault-severity-2' : 'fault-severity-1';
+        tr.className = classification ? classification.rowClass : '';
+        const catBadge = classification
+            ? `<span class="badge ${classification.badge}">${classification.category}</span>`
+            : '<span style="color:#999;">--</span>';
+        const actionText = classification ? classification.action : (lineSpeed < 5 ? 'Set line speed' : 'Below threshold');
+
         tr.innerHTML = `
             <td>${idx + 1}</td>
-            <td><input type="text" class="fault-no-input" data-type="twist" data-idx="${idx}" placeholder="--" style="width:60px;padding:4px 6px;border:1px solid #ccc;border-radius:4px;font-size:12px;text-align:center;"></td>
+            <td><input type="text" class="fault-no-input" data-type="twist" data-idx="${idx}" placeholder="--" style="width:55px;padding:3px 5px;border:1px solid #ccc;border-radius:4px;font-size:11px;text-align:center;"></td>
             <td>${f.startLocation}</td>
             <td>${f.endLocation}</td>
             <td>${f.length}</td>
             <td>${f.maxAbsTwist.toFixed(1)}</td>
             <td>${f.worstValue.toFixed(1)}</td>
+            <td>
+                <select class="radius-select" data-twist-idx="${idx}" onchange="onRadiusChange(this)">
+                    <option value="gte400" ${!isLessThan400 ? 'selected' : ''}>&ge; 400m</option>
+                    <option value="lt400" ${isLessThan400 ? 'selected' : ''}>&lt; 400m</option>
+                </select>
+            </td>
+            <td>${catBadge}</td>
+            <td style="font-size:11px;max-width:220px;">${actionText}</td>
         `;
         tbody.appendChild(tr);
     });
+}
+
+function onRadiusChange(selectEl) {
+    const idx = parseInt(selectEl.dataset.twistIdx);
+    twistFaultRadiusSettings[idx] = (selectEl.value === 'lt400');
+    // Rebuild just the twist table and summary
+    buildTwistFaultTable();
+    updateSummaryStats();
 }
 
 // ---- Navigation ----
@@ -768,6 +1079,7 @@ function goBack() {
 // ---- Export Excel ----
 function exportExcel() {
     const wb = XLSX.utils.book_new();
+    const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
 
     // Sheet 1: Survey Info
     const runName = document.getElementById('runNameInput').value;
@@ -775,6 +1087,7 @@ function exportExcel() {
     const metaArr = [
         { Field: 'Run Name', Value: runName },
         { Field: 'Inspector', Value: inspector },
+        { Field: 'Line Speed (mph)', Value: lineSpeed || 'Not set' },
         ...Object.entries(metadata).map(([k, v]) => ({ Field: k, Value: v }))
     ];
     const ws1 = XLSX.utils.json_to_sheet(metaArr);
@@ -787,38 +1100,48 @@ function exportExcel() {
         'Gauge (mm)': r.gauge,
         'X-Level (mm)': r.xlevel,
         'Twist 1 (mm)': r.twist1,
-        Zone: r.zone,
-        'Gauge Fault': r.gauge < 1430 ? 'YES' : '',
-        'Twist Fault': (r.twist1 !== null && (r.twist1 > 11 || r.twist1 < -11)) ? 'YES' : ''
+        Zone: r.zone
     }));
     const ws2 = XLSX.utils.json_to_sheet(allData);
     XLSX.utils.book_append_sheet(wb, ws2, 'All Data');
 
     // Sheet 3: Gauge Faults
     const gaugeFaultNos = document.querySelectorAll('.fault-no-input[data-type="gauge"]');
-    const gfData = gaugeFaults.map((f, i) => ({
-        '#': i + 1,
-        'Fault No.': gaugeFaultNos[i] ? gaugeFaultNos[i].value : '',
-        'Start Location': f.startLocation,
-        'End Location': f.endLocation,
-        'Length (yds)': f.length,
-        'Min Gauge (mm)': f.minGauge.toFixed(1),
-        'Worst Deviation (mm)': '-' + f.worstDeviation.toFixed(1)
-    }));
+    const gfData = gaugeFaults.map((f, i) => {
+        const c = classifyGaugeFault(f.worstGauge, lineSpeed);
+        return {
+            '#': i + 1,
+            'Fault No.': gaugeFaultNos[i] ? gaugeFaultNos[i].value : '',
+            'Start Location': f.startLocation,
+            'End Location': f.endLocation,
+            'Length (yds)': f.length,
+            'Worst Gauge (mm)': f.worstGauge.toFixed(1),
+            'Deviation (mm)': f.deviation,
+            'Fault Type': c ? c.type : (f.direction === 'wide' ? 'Wide Gauge' : 'Tight Gauge'),
+            'Category': c ? c.category : '',
+            'Required Action': c ? c.action : ''
+        };
+    });
     const ws3 = XLSX.utils.json_to_sheet(gfData.length ? gfData : [{ Info: 'No gauge faults' }]);
     XLSX.utils.book_append_sheet(wb, ws3, 'Gauge Faults');
 
     // Sheet 4: Twist Faults
     const twistFaultNos = document.querySelectorAll('.fault-no-input[data-type="twist"]');
-    const tfData = twistFaults.map((f, i) => ({
-        '#': i + 1,
-        'Fault No.': twistFaultNos[i] ? twistFaultNos[i].value : '',
-        'Start Location': f.startLocation,
-        'End Location': f.endLocation,
-        'Length (yds)': f.length,
-        'Max |Twist 1| (mm)': f.maxAbsTwist.toFixed(1),
-        'Worst Value (mm)': f.worstValue.toFixed(1)
-    }));
+    const tfData = twistFaults.map((f, i) => {
+        const c = classifyTwistFault(f.maxAbsTwist, lineSpeed, twistFaultRadiusSettings[i]);
+        return {
+            '#': i + 1,
+            'Fault No.': twistFaultNos[i] ? twistFaultNos[i].value : '',
+            'Start Location': f.startLocation,
+            'End Location': f.endLocation,
+            'Length (yds)': f.length,
+            'Max |Twist| (mm)': f.maxAbsTwist.toFixed(1),
+            'Worst Value (mm)': f.worstValue.toFixed(1),
+            'Curve Radius': twistFaultRadiusSettings[i] ? '< 400m' : '>= 400m',
+            'Category': c ? c.category : '',
+            'Required Action': c ? c.action : ''
+        };
+    });
     const ws4 = XLSX.utils.json_to_sheet(tfData.length ? tfData : [{ Info: 'No twist faults' }]);
     XLSX.utils.book_append_sheet(wb, ws4, 'Twist Faults');
 
@@ -832,6 +1155,7 @@ function exportPDF() {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF('landscape', 'mm', 'a4');
     const pageWidth = doc.internal.pageSize.getWidth();
+    const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
 
     // Page 1: Survey info + summary
     const pdfRunName = document.getElementById('runNameInput').value;
@@ -844,22 +1168,24 @@ function exportPDF() {
     doc.setTextColor(100);
     const route = metadata['Route ID'] || '';
     const track = metadata['Track ID'] || '';
-    const jobRef = metadata['Job Reference'] || '';
-    doc.text(`Run Name: ${pdfRunName}  |  Inspector: ${pdfInspector}`, 14, 28);
-    doc.text(`Route: ${route}  |  Track: ${track}  |  ${jobRef}`, 14, 34);
+    doc.text(`Run Name: ${pdfRunName}  |  Inspector: ${pdfInspector}  |  Line Speed: ${lineSpeed || 'N/A'} mph`, 14, 28);
+    doc.text(`Route: ${route}  |  Track: ${track}  |  ${metadata['Job Reference'] || ''}`, 14, 34);
     doc.text(`${metadata['Start Location'] || ''} to ${metadata['End Location'] || ''}`, 14, 40);
     doc.text(`Date: ${metadata['Start Time'] || ''}`, 14, 46);
 
     // Summary table
     doc.autoTable({
         startY: 54,
-        head: [['Total Points', 'Gauge Faults', 'Twist Faults', 'Min Gauge', 'Max Gauge']],
+        head: [['Total Points', 'Gauge Faults', 'Twist Faults', 'Min Gauge', 'Max Gauge', 'Max |Twist|']],
         body: [[
             parsedData.length,
             gaugeFaults.length,
             twistFaults.length,
             Math.min(...parsedData.map(r => r.gauge)).toFixed(1) + ' mm',
-            Math.max(...parsedData.map(r => r.gauge)).toFixed(1) + ' mm'
+            Math.max(...parsedData.map(r => r.gauge)).toFixed(1) + ' mm',
+            (parsedData.filter(r => r.twist1 !== null).length > 0
+                ? Math.max(...parsedData.filter(r => r.twist1 !== null).map(r => Math.abs(r.twist1))).toFixed(1) + ' mm'
+                : 'N/A')
         ]],
         theme: 'grid',
         headStyles: { fillColor: [26, 26, 46] },
@@ -882,7 +1208,7 @@ function exportPDF() {
     doc.addPage();
     doc.setFontSize(14);
     doc.setTextColor(26, 26, 46);
-    doc.text('Gauge Faults (Gauge < 1430mm)', 14, 20);
+    doc.text('Gauge Faults (Table 5 Limits) - Line Speed: ' + (lineSpeed || 'N/A') + ' mph', 14, 20);
 
     const pdfGaugeFaultNos = document.querySelectorAll('.fault-no-input[data-type="gauge"]');
     if (gaugeFaults.length === 0) {
@@ -892,14 +1218,23 @@ function exportPDF() {
     } else {
         doc.autoTable({
             startY: 28,
-            head: [['#', 'Fault No.', 'Start Location', 'End Location', 'Length (yds)', 'Min Gauge (mm)', 'Worst Deviation (mm)']],
-            body: gaugeFaults.map((f, i) => [
-                i + 1, pdfGaugeFaultNos[i] ? pdfGaugeFaultNos[i].value : '', f.startLocation, f.endLocation, f.length,
-                f.minGauge.toFixed(1), '-' + f.worstDeviation.toFixed(1)
-            ]),
+            head: [['#', 'Fault No.', 'Start', 'End', 'Length', 'Worst Gauge', 'Deviation', 'Type', 'Cat.', 'Required Action']],
+            body: gaugeFaults.map((f, i) => {
+                const c = classifyGaugeFault(f.worstGauge, lineSpeed);
+                return [
+                    i + 1,
+                    pdfGaugeFaultNos[i] ? pdfGaugeFaultNos[i].value : '',
+                    f.startLocation, f.endLocation, f.length,
+                    f.worstGauge.toFixed(1), f.deviation,
+                    c ? c.type : (f.direction === 'wide' ? 'Wide' : 'Tight'),
+                    c ? c.category : '',
+                    c ? c.action : ''
+                ];
+            }),
             theme: 'striped',
             headStyles: { fillColor: [26, 26, 46] },
-            styles: { fontSize: 8 }
+            styles: { fontSize: 7 },
+            columnStyles: { 9: { cellWidth: 55 } }
         });
     }
 
@@ -910,20 +1245,16 @@ function exportPDF() {
     doc.text('Section Manager Sign-Off', 14, gSignY);
     doc.setFontSize(9);
     doc.setTextColor(80);
-    const gSignName = document.getElementById('gaugeSignOffName').value;
-    const gSignDate = document.getElementById('gaugeSignOffDate').value;
-    const gSignSig = document.getElementById('gaugeSignOffSig').value;
-    const gSignComments = document.getElementById('gaugeSignOffComments').value;
-    doc.text(`Name: ${gSignName}`, 14, gSignY + 8);
-    doc.text(`Date: ${gSignDate}`, 14, gSignY + 14);
-    doc.text(`Signature: ${gSignSig}`, 120, gSignY + 8);
-    doc.text(`Comments: ${gSignComments}`, 120, gSignY + 14);
+    doc.text(`Name: ${document.getElementById('gaugeSignOffName').value}`, 14, gSignY + 8);
+    doc.text(`Date: ${document.getElementById('gaugeSignOffDate').value}`, 14, gSignY + 14);
+    doc.text(`Signature: ${document.getElementById('gaugeSignOffSig').value}`, 120, gSignY + 8);
+    doc.text(`Comments: ${document.getElementById('gaugeSignOffComments').value}`, 120, gSignY + 14);
 
     // Page 3: Twist Faults
     doc.addPage();
     doc.setFontSize(14);
     doc.setTextColor(26, 26, 46);
-    doc.text('Twist Faults (Twist 1 - 3m)', 14, 20);
+    doc.text('Twist Faults - 3m Base (Table 3 Limits) - Line Speed: ' + (lineSpeed || 'N/A') + ' mph', 14, 20);
 
     const pdfTwistFaultNos = document.querySelectorAll('.fault-no-input[data-type="twist"]');
     if (twistFaults.length === 0) {
@@ -933,14 +1264,23 @@ function exportPDF() {
     } else {
         doc.autoTable({
             startY: 28,
-            head: [['#', 'Fault No.', 'Start Location', 'End Location', 'Length (yds)', 'Max |Twist 1| (mm)', 'Worst Value (mm)']],
-            body: twistFaults.map((f, i) => [
-                i + 1, pdfTwistFaultNos[i] ? pdfTwistFaultNos[i].value : '', f.startLocation, f.endLocation, f.length,
-                f.maxAbsTwist.toFixed(1), f.worstValue.toFixed(1)
-            ]),
+            head: [['#', 'Fault No.', 'Start', 'End', 'Length', 'Max |Twist|', 'Worst', 'Curve R', 'Cat.', 'Required Action']],
+            body: twistFaults.map((f, i) => {
+                const c = classifyTwistFault(f.maxAbsTwist, lineSpeed, twistFaultRadiusSettings[i]);
+                return [
+                    i + 1,
+                    pdfTwistFaultNos[i] ? pdfTwistFaultNos[i].value : '',
+                    f.startLocation, f.endLocation, f.length,
+                    f.maxAbsTwist.toFixed(1), f.worstValue.toFixed(1),
+                    twistFaultRadiusSettings[i] ? '< 400m' : '>= 400m',
+                    c ? c.category : '',
+                    c ? c.action : ''
+                ];
+            }),
             theme: 'striped',
             headStyles: { fillColor: [26, 26, 46] },
-            styles: { fontSize: 8 }
+            styles: { fontSize: 7 },
+            columnStyles: { 9: { cellWidth: 55 } }
         });
     }
 
@@ -951,14 +1291,10 @@ function exportPDF() {
     doc.text('Section Manager Sign-Off', 14, tSignY);
     doc.setFontSize(9);
     doc.setTextColor(80);
-    const tSignName = document.getElementById('twistSignOffName').value;
-    const tSignDate = document.getElementById('twistSignOffDate').value;
-    const tSignSig = document.getElementById('twistSignOffSig').value;
-    const tSignComments = document.getElementById('twistSignOffComments').value;
-    doc.text(`Name: ${tSignName}`, 14, tSignY + 8);
-    doc.text(`Date: ${tSignDate}`, 14, tSignY + 14);
-    doc.text(`Signature: ${tSignSig}`, 120, tSignY + 8);
-    doc.text(`Comments: ${tSignComments}`, 120, tSignY + 14);
+    doc.text(`Name: ${document.getElementById('twistSignOffName').value}`, 14, tSignY + 8);
+    doc.text(`Date: ${document.getElementById('twistSignOffDate').value}`, 14, tSignY + 14);
+    doc.text(`Signature: ${document.getElementById('twistSignOffSig').value}`, 120, tSignY + 8);
+    doc.text(`Comments: ${document.getElementById('twistSignOffComments').value}`, 120, tSignY + 14);
 
     const filename = 'TrackInspection_' + (metadata['Route ID'] || 'Report') + '_' +
         (metadata['Track ID'] || '') + '.pdf';
