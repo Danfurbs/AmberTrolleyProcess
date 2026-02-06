@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amber Trolley - Track Inspection Report Generator</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; color: #333; }
+
+        .upload-screen {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            min-height: 100vh; padding: 40px;
+        }
+        .upload-screen h1 { font-size: 28px; margin-bottom: 8px; color: #1a1a2e; }
+        .upload-screen p { color: #666; margin-bottom: 30px; }
+        .drop-zone {
+            width: 500px; max-width: 90vw; height: 200px;
+            border: 3px dashed #aab; border-radius: 12px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            cursor: pointer; transition: all 0.3s; background: #fff;
+        }
+        .drop-zone:hover, .drop-zone.dragover { border-color: #4a6cf7; background: #f0f4ff; }
+        .drop-zone span { font-size: 16px; color: #666; }
+        .drop-zone .icon { font-size: 48px; margin-bottom: 12px; }
+        .drop-zone input { display: none; }
+
+        .report-container { display: none; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .report-container.active { display: block; }
+
+        .toolbar {
+            display: flex; gap: 10px; align-items: center; margin-bottom: 20px;
+            padding: 16px 20px; background: #1a1a2e; border-radius: 10px; flex-wrap: wrap;
+        }
+        .toolbar h2 { color: #fff; font-size: 18px; flex: 1; }
+        .toolbar button {
+            padding: 8px 18px; border: none; border-radius: 6px; cursor: pointer;
+            font-size: 14px; font-weight: 600; transition: all 0.2s;
+        }
+        .btn-excel { background: #1d6f42; color: #fff; }
+        .btn-excel:hover { background: #175c36; }
+        .btn-pdf { background: #c0392b; color: #fff; }
+        .btn-pdf:hover { background: #a93226; }
+        .btn-back { background: #555; color: #fff; }
+        .btn-back:hover { background: #444; }
+
+        .tabs {
+            display: flex; gap: 4px; margin-bottom: 20px; background: #ddd; padding: 4px;
+            border-radius: 8px;
+        }
+        .tab {
+            flex: 1; padding: 12px 16px; text-align: center; border: none; background: none;
+            cursor: pointer; border-radius: 6px; font-size: 14px; font-weight: 600;
+            color: #666; transition: all 0.2s;
+        }
+        .tab.active { background: #fff; color: #1a1a2e; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+
+        .page { display: none; }
+        .page.active { display: block; }
+
+        .card {
+            background: #fff; border-radius: 10px; padding: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 20px;
+        }
+        .card h3 { font-size: 16px; color: #1a1a2e; margin-bottom: 16px; border-bottom: 2px solid #eee; padding-bottom: 8px; }
+
+        .meta-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 8px 24px;
+        }
+        .meta-item { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+        .meta-item .label { color: #888; }
+        .meta-item .value { font-weight: 600; color: #333; }
+
+        .chart-row { display: grid; grid-template-columns: 1fr; gap: 20px; }
+        .chart-wrapper { position: relative; height: 300px; }
+        canvas { width: 100% !important; }
+
+        table {
+            width: 100%; border-collapse: collapse; font-size: 13px;
+        }
+        thead th {
+            background: #1a1a2e; color: #fff; padding: 10px 12px; text-align: left;
+            font-weight: 600; position: sticky; top: 0;
+        }
+        tbody td { padding: 8px 12px; border-bottom: 1px solid #eee; }
+        tbody tr:hover { background: #f8f9ff; }
+        .fault-gauge { background: #fff3cd; }
+        .fault-twist { background: #f8d7da; }
+        .fault-both { background: #fdd; }
+
+        .summary-stats {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px; margin-bottom: 20px;
+        }
+        .stat-card {
+            background: #fff; border-radius: 10px; padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08); text-align: center;
+        }
+        .stat-card .number { font-size: 32px; font-weight: 700; color: #1a1a2e; }
+        .stat-card .label { font-size: 13px; color: #888; margin-top: 4px; }
+        .stat-card.warning .number { color: #e67e22; }
+        .stat-card.danger .number { color: #c0392b; }
+
+        .fault-severity-1 { border-left: 4px solid #e67e22; }
+        .fault-severity-2 { border-left: 4px solid #c0392b; }
+
+        @media print {
+            .toolbar, .tabs { display: none; }
+            .page { display: block !important; page-break-after: always; }
+            .card { box-shadow: none; border: 1px solid #ddd; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="upload-screen" id="uploadScreen">
+    <h1>Amber Trolley Report Generator</h1>
+    <p>Upload a raw data HTML file from the Amber trolley to generate an inspection report</p>
+    <div class="drop-zone" id="dropZone">
+        <div class="icon">&#128196;</div>
+        <span>Drop HTML file here or click to browse</span>
+        <input type="file" id="fileInput" accept=".html,.htm,.txt,.csv">
+    </div>
+    <div style="margin-top: 30px; max-width: 500px;">
+        <p style="font-size: 13px; color: #999; text-align: center;">
+            Supported: Amber trolley HTML export files. Identifies gauge faults (&lt;1430mm)
+            and twist faults (|Twist 1| &gt; 11mm over 3m) with continuous fault ranging.
+        </p>
+    </div>
+</div>
+
+<div class="report-container" id="reportContainer">
+    <div class="toolbar">
+        <h2 id="reportTitle">Track Inspection Report</h2>
+        <button class="btn-back" onclick="goBack()">Load New File</button>
+        <button class="btn-excel" onclick="exportExcel()">Export Excel</button>
+        <button class="btn-pdf" onclick="exportPDF()">Export PDF</button>
+    </div>
+
+    <div class="tabs">
+        <button class="tab active" data-page="overview">Overview &amp; Graphs</button>
+        <button class="tab" data-page="gaugeFaults">Gauge Faults</button>
+        <button class="tab" data-page="twistFaults">Twist Faults</button>
+    </div>
+
+    <!-- Page 1: Overview & Graphs -->
+    <div class="page active" id="page-overview">
+        <div class="card">
+            <h3>Survey Information</h3>
+            <div class="meta-grid" id="metaGrid"></div>
+        </div>
+
+        <div class="summary-stats" id="summaryStats"></div>
+
+        <div class="card">
+            <h3>Gauge Profile (mm)</h3>
+            <div class="chart-wrapper"><canvas id="gaugeChart"></canvas></div>
+        </div>
+        <div class="card">
+            <h3>Twist over 3m (mm)</h3>
+            <div class="chart-wrapper"><canvas id="twistChart"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Page 2: Gauge Faults -->
+    <div class="page" id="page-gaugeFaults">
+        <div class="card">
+            <h3>Gauge Faults (Gauge &lt; 1430mm)</h3>
+            <p style="margin-bottom: 12px; color: #666; font-size: 13px;">
+                Continuous fault ranges are grouped by start and end mileage.
+            </p>
+            <div style="overflow-x: auto;">
+                <table id="gaugeFaultTable">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Start Location</th>
+                            <th>End Location</th>
+                            <th>Length (yds)</th>
+                            <th>Min Gauge (mm)</th>
+                            <th>Worst Deviation (mm)</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Page 3: Twist Faults -->
+    <div class="page" id="page-twistFaults">
+        <div class="card">
+            <h3>Twist Faults (|Twist 1| &gt; 11mm over 3m)</h3>
+            <p style="margin-bottom: 12px; color: #666; font-size: 13px;">
+                Twist 1 values exceeding &plusmn;11mm over 3m base. Continuous ranges grouped.
+            </p>
+            <div style="overflow-x: auto;">
+                <table id="twistFaultTable">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Start Location</th>
+                            <th>End Location</th>
+                            <th>Length (yds)</th>
+                            <th>Max |Twist 1| (mm)</th>
+                            <th>Worst Value (mm)</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ---- State ----
+let parsedData = null;
+let gaugeFaults = [];
+let twistFaults = [];
+let metadata = {};
+let gaugeChartInstance = null;
+let twistChartInstance = null;
+
+// ---- Upload ----
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+        try {
+            const content = e.target.result;
+            parseData(content);
+            buildReport();
+            document.getElementById('uploadScreen').style.display = 'none';
+            document.getElementById('reportContainer').classList.add('active');
+        } catch (err) {
+            alert('Error parsing file: ' + err.message);
+            console.error(err);
+        }
+    };
+    reader.readAsText(file);
+}
+
+// ---- Parsing ----
+function parseData(content) {
+    // Try to extract from HTML table or treat as tab-separated text
+    let lines;
+    if (content.includes('<table') || content.includes('<TABLE')) {
+        lines = parseHTMLTable(content);
+    } else {
+        lines = content.split('\n').map(l => l.trim()).filter(l => l);
+    }
+
+    metadata = {};
+    const dataRows = [];
+    let headerFound = false;
+    let columnHeaders = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = typeof lines[i] === 'string' ? lines[i] : lines[i].join('\t');
+        const cells = typeof lines[i] === 'string'
+            ? line.split('\t').map(c => c.trim())
+            : lines[i].map(c => (c || '').trim());
+
+        // Detect column header row
+        if (!headerFound && cells[0] === 'Miles' && cells[1] === 'Yards') {
+            headerFound = true;
+            columnHeaders = cells;
+            continue;
+        }
+
+        if (!headerFound) {
+            // Parse metadata - key/value pairs
+            if (cells.length >= 2 && cells[0] && cells[1]) {
+                metadata[cells[0]] = cells[1];
+            } else if (cells.length === 1 && cells[0].includes('\t')) {
+                const parts = cells[0].split('\t');
+                if (parts.length >= 2) metadata[parts[0].trim()] = parts[1].trim();
+            }
+            // Also try colon-separated on single string
+            if (typeof lines[i] === 'string' && !cells[1] && line.includes('\t')) {
+                const parts = line.split('\t');
+                if (parts.length >= 2 && parts[0].trim()) {
+                    metadata[parts[0].trim()] = parts[1].trim();
+                }
+            }
+            continue;
+        }
+
+        // Parse data row
+        if (headerFound && cells[0] && !isNaN(parseFloat(cells[0]))) {
+            const row = {
+                miles: parseFloat(cells[0]),
+                yards: parseFloat(cells[1]),
+                gauge: parseFloat(cells[2]),
+                xlevel: parseFloat(cells[3]),
+                twist1: cells[4] !== '' && cells[4] !== undefined ? parseFloat(cells[4]) : null,
+                twist2: cells[5] !== '' && cells[5] !== undefined ? parseFloat(cells[5]) : null,
+                zone: cells[7] || cells[6] || ''
+            };
+            if (!isNaN(row.miles) && !isNaN(row.yards) && !isNaN(row.gauge)) {
+                row.location = row.miles + 'mi ' + row.yards.toFixed(1) + 'yds';
+                dataRows.push(row);
+            }
+        }
+    }
+
+    parsedData = dataRows;
+
+    if (parsedData.length === 0) {
+        throw new Error('No measurement data rows found. Check file format.');
+    }
+
+    // Identify faults
+    identifyGaugeFaults();
+    identifyTwistFaults();
+}
+
+function parseHTMLTable(html) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const rows = doc.querySelectorAll('tr');
+    const result = [];
+    rows.forEach(row => {
+        const cells = [];
+        row.querySelectorAll('td, th').forEach(cell => cells.push(cell.textContent.trim()));
+        if (cells.length > 0) result.push(cells);
+    });
+    return result;
+}
+
+function formatLocation(row) {
+    return row.miles + 'mi ' + row.yards.toFixed(1) + 'yds';
+}
+
+// ---- Fault Identification ----
+function identifyGaugeFaults() {
+    gaugeFaults = [];
+    let inFault = false;
+    let currentFault = null;
+
+    for (let i = 0; i < parsedData.length; i++) {
+        const row = parsedData[i];
+        if (row.gauge < 1430) {
+            if (!inFault) {
+                currentFault = {
+                    startIdx: i,
+                    startLocation: formatLocation(row),
+                    startMiles: row.miles,
+                    startYards: row.yards,
+                    minGauge: row.gauge,
+                    worstDeviation: 1430 - row.gauge,
+                    rows: [row]
+                };
+                inFault = true;
+            } else {
+                currentFault.rows.push(row);
+                if (row.gauge < currentFault.minGauge) {
+                    currentFault.minGauge = row.gauge;
+                    currentFault.worstDeviation = 1430 - row.gauge;
+                }
+            }
+        } else {
+            if (inFault) {
+                const lastRow = currentFault.rows[currentFault.rows.length - 1];
+                currentFault.endLocation = formatLocation(lastRow);
+                currentFault.endMiles = lastRow.miles;
+                currentFault.endYards = lastRow.yards;
+                currentFault.length = (currentFault.endYards - currentFault.startYards).toFixed(1);
+                gaugeFaults.push(currentFault);
+                inFault = false;
+                currentFault = null;
+            }
+        }
+    }
+    if (inFault) {
+        const lastRow = currentFault.rows[currentFault.rows.length - 1];
+        currentFault.endLocation = formatLocation(lastRow);
+        currentFault.endMiles = lastRow.miles;
+        currentFault.endYards = lastRow.yards;
+        currentFault.length = (currentFault.endYards - currentFault.startYards).toFixed(1);
+        gaugeFaults.push(currentFault);
+    }
+}
+
+function identifyTwistFaults() {
+    // Twist fault: any row where |Twist 1| > 11mm
+    const TWIST_THRESHOLD = 11;
+    twistFaults = [];
+    let inFault = false;
+    let currentFault = null;
+
+    for (let i = 0; i < parsedData.length; i++) {
+        const row = parsedData[i];
+        const hasTwist = row.twist1 !== null && !isNaN(row.twist1) &&
+            (row.twist1 > TWIST_THRESHOLD || row.twist1 < -TWIST_THRESHOLD);
+
+        if (hasTwist) {
+            if (!inFault) {
+                currentFault = {
+                    startIdx: i,
+                    startLocation: formatLocation(row),
+                    startMiles: row.miles,
+                    startYards: row.yards,
+                    maxAbsTwist: Math.abs(row.twist1),
+                    worstValue: row.twist1,
+                    rows: [row]
+                };
+                inFault = true;
+            } else {
+                currentFault.rows.push(row);
+                if (Math.abs(row.twist1) > currentFault.maxAbsTwist) {
+                    currentFault.maxAbsTwist = Math.abs(row.twist1);
+                    currentFault.worstValue = row.twist1;
+                }
+            }
+        } else {
+            if (inFault) {
+                const lastRow = currentFault.rows[currentFault.rows.length - 1];
+                currentFault.endLocation = formatLocation(lastRow);
+                currentFault.endMiles = lastRow.miles;
+                currentFault.endYards = lastRow.yards;
+                currentFault.length = (currentFault.endYards - currentFault.startYards).toFixed(1);
+                twistFaults.push(currentFault);
+                inFault = false;
+                currentFault = null;
+            }
+        }
+    }
+    if (inFault) {
+        const lastRow = currentFault.rows[currentFault.rows.length - 1];
+        currentFault.endLocation = formatLocation(lastRow);
+        currentFault.endMiles = lastRow.miles;
+        currentFault.endYards = lastRow.yards;
+        currentFault.length = (currentFault.endYards - currentFault.startYards).toFixed(1);
+        twistFaults.push(currentFault);
+    }
+}
+
+// ---- Build Report ----
+function buildReport() {
+    // Title
+    const route = metadata['Route ID'] || '';
+    const track = metadata['Track ID'] || '';
+    const jobRef = metadata['Job Reference'] || '';
+    document.getElementById('reportTitle').textContent =
+        'Track Inspection Report' + (route ? ' - ' + route : '') + (track ? ' / ' + track : '');
+
+    // Metadata
+    const metaGrid = document.getElementById('metaGrid');
+    metaGrid.innerHTML = '';
+    const displayKeys = [
+        'Operator ID', 'Profile', 'Start Location', 'End Location',
+        'Direction Of Travel', 'Job Reference', 'Route ID', 'Track ID',
+        'Start Time', 'End Time', 'Serial Number', 'Reference Gauge',
+        'Calibrated', 'Twist Base 1', 'Software Version', 'Acquisition Rate'
+    ];
+    displayKeys.forEach(key => {
+        if (metadata[key]) {
+            metaGrid.innerHTML += `<div class="meta-item"><span class="label">${key}</span><span class="value">${metadata[key]}</span></div>`;
+        }
+    });
+
+    // Summary stats
+    const statsDiv = document.getElementById('summaryStats');
+    const totalPoints = parsedData.length;
+    const minGauge = Math.min(...parsedData.map(r => r.gauge));
+    const maxGauge = Math.max(...parsedData.map(r => r.gauge));
+    const twistValues = parsedData.filter(r => r.twist1 !== null).map(r => r.twist1);
+    const maxTwist = twistValues.length ? Math.max(...twistValues.map(v => Math.abs(v))) : 0;
+
+    statsDiv.innerHTML = `
+        <div class="stat-card"><div class="number">${totalPoints}</div><div class="label">Data Points</div></div>
+        <div class="stat-card ${gaugeFaults.length > 0 ? 'danger' : ''}"><div class="number">${gaugeFaults.length}</div><div class="label">Gauge Fault Ranges</div></div>
+        <div class="stat-card ${twistFaults.length > 0 ? 'warning' : ''}"><div class="number">${twistFaults.length}</div><div class="label">Twist Fault Ranges</div></div>
+        <div class="stat-card"><div class="number">${minGauge.toFixed(1)}</div><div class="label">Min Gauge (mm)</div></div>
+        <div class="stat-card"><div class="number">${maxGauge.toFixed(1)}</div><div class="label">Max Gauge (mm)</div></div>
+        <div class="stat-card"><div class="number">${maxTwist.toFixed(1)}</div><div class="label">Max |Twist 1| (mm)</div></div>
+    `;
+
+    // Charts
+    buildCharts();
+
+    // Fault tables
+    buildGaugeFaultTable();
+    buildTwistFaultTable();
+
+    // Tab handling
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            tab.classList.add('active');
+            document.getElementById('page-' + tab.dataset.page).classList.add('active');
+        });
+    });
+}
+
+function buildCharts() {
+    const labels = parsedData.map(r => r.miles + 'mi ' + r.yards.toFixed(0) + 'y');
+    // Thin labels for readability - show every Nth
+    const step = Math.max(1, Math.floor(parsedData.length / 30));
+    const displayLabels = labels.map((l, i) => i % step === 0 ? l : '');
+
+    // Gauge chart
+    const gaugeCtx = document.getElementById('gaugeChart').getContext('2d');
+    if (gaugeChartInstance) gaugeChartInstance.destroy();
+    gaugeChartInstance = new Chart(gaugeCtx, {
+        type: 'line',
+        data: {
+            labels: displayLabels,
+            datasets: [
+                {
+                    label: 'Gauge (mm)',
+                    data: parsedData.map(r => r.gauge),
+                    borderColor: '#4a6cf7',
+                    backgroundColor: 'rgba(74,108,247,0.1)',
+                    fill: true,
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    tension: 0.3
+                },
+                {
+                    label: 'Reference (1435mm)',
+                    data: parsedData.map(() => 1435),
+                    borderColor: '#28a745',
+                    borderWidth: 1,
+                    borderDash: [6, 4],
+                    pointRadius: 0,
+                    fill: false
+                },
+                {
+                    label: 'Fault Threshold (1430mm)',
+                    data: parsedData.map(() => 1430),
+                    borderColor: '#c0392b',
+                    borderWidth: 1.5,
+                    borderDash: [4, 4],
+                    pointRadius: 0,
+                    fill: false
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top', labels: { usePointStyle: true, padding: 16 } },
+                tooltip: {
+                    callbacks: {
+                        title: (items) => labels[items[0].dataIndex]
+                    }
+                }
+            },
+            scales: {
+                x: { ticks: { maxRotation: 45, font: { size: 10 } } },
+                y: { title: { display: true, text: 'Gauge (mm)' } }
+            }
+        }
+    });
+
+    // Twist chart - only plot Twist 1 values, show null gaps
+    const twist1Data = parsedData.map(r => r.twist1);
+    const twist2Data = parsedData.map(r => r.twist2);
+
+    const twistCtx = document.getElementById('twistChart').getContext('2d');
+    if (twistChartInstance) twistChartInstance.destroy();
+    twistChartInstance = new Chart(twistCtx, {
+        type: 'line',
+        data: {
+            labels: displayLabels,
+            datasets: [
+                {
+                    label: 'Twist 1 - 3m (mm)',
+                    data: twist1Data,
+                    borderColor: '#e67e22',
+                    backgroundColor: 'rgba(230,126,34,0.1)',
+                    fill: true,
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    tension: 0.3,
+                    spanGaps: false
+                },
+                {
+                    label: 'Twist 2 - 5m (mm)',
+                    data: twist2Data,
+                    borderColor: '#8e44ad',
+                    backgroundColor: 'rgba(142,68,173,0.1)',
+                    fill: false,
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    tension: 0.3,
+                    spanGaps: false
+                },
+                {
+                    label: 'Zero line',
+                    data: parsedData.map(() => 0),
+                    borderColor: '#aaa',
+                    borderWidth: 1,
+                    borderDash: [3, 3],
+                    pointRadius: 0,
+                    fill: false
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top', labels: { usePointStyle: true, padding: 16 } },
+                tooltip: {
+                    callbacks: {
+                        title: (items) => labels[items[0].dataIndex]
+                    }
+                }
+            },
+            scales: {
+                x: { ticks: { maxRotation: 45, font: { size: 10 } } },
+                y: { title: { display: true, text: 'Twist (mm)' } }
+            }
+        }
+    });
+}
+
+function buildGaugeFaultTable() {
+    const tbody = document.querySelector('#gaugeFaultTable tbody');
+    tbody.innerHTML = '';
+    if (gaugeFaults.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:#888;">No gauge faults detected</td></tr>';
+        return;
+    }
+    gaugeFaults.forEach((f, idx) => {
+        const tr = document.createElement('tr');
+        tr.className = f.worstDeviation > 5 ? 'fault-severity-2' : 'fault-severity-1';
+        tr.innerHTML = `
+            <td>${idx + 1}</td>
+            <td>${f.startLocation}</td>
+            <td>${f.endLocation}</td>
+            <td>${f.length}</td>
+            <td>${f.minGauge.toFixed(1)}</td>
+            <td>-${f.worstDeviation.toFixed(1)}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function buildTwistFaultTable() {
+    const tbody = document.querySelector('#twistFaultTable tbody');
+    tbody.innerHTML = '';
+    if (twistFaults.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:#888;">No twist faults detected</td></tr>';
+        return;
+    }
+    twistFaults.forEach((f, idx) => {
+        const tr = document.createElement('tr');
+        tr.className = f.maxAbsTwist > 10 ? 'fault-severity-2' : 'fault-severity-1';
+        tr.innerHTML = `
+            <td>${idx + 1}</td>
+            <td>${f.startLocation}</td>
+            <td>${f.endLocation}</td>
+            <td>${f.length}</td>
+            <td>${f.maxAbsTwist.toFixed(1)}</td>
+            <td>${f.worstValue.toFixed(1)}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// ---- Navigation ----
+function goBack() {
+    document.getElementById('uploadScreen').style.display = 'flex';
+    document.getElementById('reportContainer').classList.remove('active');
+    fileInput.value = '';
+}
+
+// ---- Export Excel ----
+function exportExcel() {
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: Survey Info
+    const metaArr = Object.entries(metadata).map(([k, v]) => ({ Field: k, Value: v }));
+    const ws1 = XLSX.utils.json_to_sheet(metaArr);
+    XLSX.utils.book_append_sheet(wb, ws1, 'Survey Info');
+
+    // Sheet 2: All Data
+    const allData = parsedData.map(r => ({
+        Miles: r.miles,
+        Yards: r.yards,
+        'Gauge (mm)': r.gauge,
+        'X-Level (mm)': r.xlevel,
+        'Twist 1 (mm)': r.twist1,
+        'Twist 2 (mm)': r.twist2,
+        Zone: r.zone,
+        'Gauge Fault': r.gauge < 1430 ? 'YES' : '',
+        'Twist Fault': (r.twist1 !== null && (r.twist1 > 11 || r.twist1 < -11)) ? 'YES' : ''
+    }));
+    const ws2 = XLSX.utils.json_to_sheet(allData);
+    XLSX.utils.book_append_sheet(wb, ws2, 'All Data');
+
+    // Sheet 3: Gauge Faults
+    const gfData = gaugeFaults.map((f, i) => ({
+        '#': i + 1,
+        'Start Location': f.startLocation,
+        'End Location': f.endLocation,
+        'Length (yds)': f.length,
+        'Min Gauge (mm)': f.minGauge.toFixed(1),
+        'Worst Deviation (mm)': '-' + f.worstDeviation.toFixed(1)
+    }));
+    const ws3 = XLSX.utils.json_to_sheet(gfData.length ? gfData : [{ Info: 'No gauge faults' }]);
+    XLSX.utils.book_append_sheet(wb, ws3, 'Gauge Faults');
+
+    // Sheet 4: Twist Faults
+    const tfData = twistFaults.map((f, i) => ({
+        '#': i + 1,
+        'Start Location': f.startLocation,
+        'End Location': f.endLocation,
+        'Length (yds)': f.length,
+        'Max |Twist 1| (mm)': f.maxAbsTwist.toFixed(1),
+        'Worst Value (mm)': f.worstValue.toFixed(1)
+    }));
+    const ws4 = XLSX.utils.json_to_sheet(tfData.length ? tfData : [{ Info: 'No twist faults' }]);
+    XLSX.utils.book_append_sheet(wb, ws4, 'Twist Faults');
+
+    const filename = 'TrackInspection_' + (metadata['Route ID'] || 'Report') + '_' +
+        (metadata['Track ID'] || '') + '.xlsx';
+    XLSX.writeFile(wb, filename);
+}
+
+// ---- Export PDF ----
+function exportPDF() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF('landscape', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    // Page 1: Survey info + summary
+    doc.setFontSize(18);
+    doc.setTextColor(26, 26, 46);
+    doc.text('Track Inspection Report', 14, 20);
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    const route = metadata['Route ID'] || '';
+    const track = metadata['Track ID'] || '';
+    const jobRef = metadata['Job Reference'] || '';
+    doc.text(`Route: ${route}  |  Track: ${track}  |  ${jobRef}`, 14, 28);
+    doc.text(`${metadata['Start Location'] || ''} to ${metadata['End Location'] || ''}`, 14, 34);
+    doc.text(`Date: ${metadata['Start Time'] || ''}`, 14, 40);
+
+    // Summary table
+    doc.autoTable({
+        startY: 48,
+        head: [['Total Points', 'Gauge Faults', 'Twist Faults', 'Min Gauge', 'Max Gauge']],
+        body: [[
+            parsedData.length,
+            gaugeFaults.length,
+            twistFaults.length,
+            Math.min(...parsedData.map(r => r.gauge)).toFixed(1) + ' mm',
+            Math.max(...parsedData.map(r => r.gauge)).toFixed(1) + ' mm'
+        ]],
+        theme: 'grid',
+        headStyles: { fillColor: [26, 26, 46] },
+        styles: { fontSize: 9 }
+    });
+
+    // Add chart images
+    const gaugeCanvas = document.getElementById('gaugeChart');
+    const twistCanvas = document.getElementById('twistChart');
+    const gaugeImg = gaugeCanvas.toDataURL('image/png');
+    const twistImg = twistCanvas.toDataURL('image/png');
+
+    const chartY = doc.lastAutoTable.finalY + 8;
+    const chartW = pageWidth - 28;
+    const chartH = 70;
+    doc.addImage(gaugeImg, 'PNG', 14, chartY, chartW, chartH);
+    doc.addImage(twistImg, 'PNG', 14, chartY + chartH + 6, chartW, chartH);
+
+    // Page 2: Gauge Faults
+    doc.addPage();
+    doc.setFontSize(14);
+    doc.setTextColor(26, 26, 46);
+    doc.text('Gauge Faults (Gauge < 1430mm)', 14, 20);
+
+    if (gaugeFaults.length === 0) {
+        doc.setFontSize(11);
+        doc.setTextColor(100);
+        doc.text('No gauge faults detected.', 14, 32);
+    } else {
+        doc.autoTable({
+            startY: 28,
+            head: [['#', 'Start Location', 'End Location', 'Length (yds)', 'Min Gauge (mm)', 'Worst Deviation (mm)']],
+            body: gaugeFaults.map((f, i) => [
+                i + 1, f.startLocation, f.endLocation, f.length,
+                f.minGauge.toFixed(1), '-' + f.worstDeviation.toFixed(1)
+            ]),
+            theme: 'striped',
+            headStyles: { fillColor: [26, 26, 46] },
+            styles: { fontSize: 8 }
+        });
+    }
+
+    // Page 3: Twist Faults
+    doc.addPage();
+    doc.setFontSize(14);
+    doc.setTextColor(26, 26, 46);
+    doc.text('Twist Faults (Twist 1 - 3m)', 14, 20);
+
+    if (twistFaults.length === 0) {
+        doc.setFontSize(11);
+        doc.setTextColor(100);
+        doc.text('No twist faults detected.', 14, 32);
+    } else {
+        doc.autoTable({
+            startY: 28,
+            head: [['#', 'Start Location', 'End Location', 'Length (yds)', 'Max |Twist 1| (mm)', 'Worst Value (mm)']],
+            body: twistFaults.map((f, i) => [
+                i + 1, f.startLocation, f.endLocation, f.length,
+                f.maxAbsTwist.toFixed(1), f.worstValue.toFixed(1)
+            ]),
+            theme: 'striped',
+            headStyles: { fillColor: [26, 26, 46] },
+            styles: { fontSize: 8 }
+        });
+    }
+
+    const filename = 'TrackInspection_' + (metadata['Route ID'] || 'Report') + '_' +
+        (metadata['Track ID'] || '') + '.pdf';
+    doc.save(filename);
+}
+</script>
+
+</body>
+</html>
