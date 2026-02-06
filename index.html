@@ -327,6 +327,7 @@
                             <th>Fault Type</th>
                             <th>Category</th>
                             <th>Required Action</th>
+                            <th>Repeat</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -382,6 +383,7 @@
                             <th>Curve Radius</th>
                             <th>Category</th>
                             <th>Required Action</th>
+                            <th>Repeat</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -1318,7 +1320,7 @@ function buildGaugeFaultTable() {
     tbody.innerHTML = '';
     const allGaugeFaults = gaugeFaults.concat(manualGaugeFaults);
     if (allGaugeFaults.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:30px;color:#888;">No gauge faults detected</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:30px;color:#888;">No gauge faults detected</td></tr>';
         return;
     }
     allGaugeFaults.forEach((f, idx) => {
@@ -1345,6 +1347,7 @@ function buildGaugeFaultTable() {
             <td>${faultType}</td>
             <td>${catBadge}</td>
             <td style="font-size:11px;max-width:220px;">${actionText} ${removeBtn}</td>
+            <td style="text-align:center;"><input type="checkbox" class="repeat-fault-cb" data-type="gauge" data-idx="${idx}"></td>
         `;
         tbody.appendChild(tr);
     });
@@ -1356,7 +1359,7 @@ function buildTwistFaultTable() {
     tbody.innerHTML = '';
     const allTwistFaults = twistFaults.concat(manualTwistFaults);
     if (allTwistFaults.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:30px;color:#888;">No twist faults detected</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:30px;color:#888;">No twist faults detected</td></tr>';
         return;
     }
     allTwistFaults.forEach((f, idx) => {
@@ -1388,6 +1391,7 @@ function buildTwistFaultTable() {
             </td>
             <td>${catBadge}</td>
             <td style="font-size:11px;max-width:220px;">${actionText} ${removeBtn}</td>
+            <td style="text-align:center;"><input type="checkbox" class="repeat-fault-cb" data-type="twist" data-idx="${idx}"></td>
         `;
         tbody.appendChild(tr);
     });
@@ -1579,6 +1583,7 @@ function exportExcel() {
     // Sheet 3: Gauge Faults (auto + manual)
     const allGaugeFaultsExport = gaugeFaults.concat(manualGaugeFaults);
     const gaugeFaultNos = document.querySelectorAll('.fault-no-input[data-type="gauge"]');
+    const gaugeRepeatCbs = document.querySelectorAll('.repeat-fault-cb[data-type="gauge"]');
     const gfData = allGaugeFaultsExport.map((f, i) => {
         const c = classifyGaugeFault(f.worstGauge, lineSpeed);
         return {
@@ -1592,7 +1597,7 @@ function exportExcel() {
             'Fault Type': c ? c.type : (f.direction === 'wide' ? 'Wide Gauge' : 'Tight Gauge'),
             'Category': c ? c.category : '',
             'Required Action': c ? c.action : '',
-            'Source': f.manual ? 'Manual' : 'Auto-detected'
+            'Repeat Fault': gaugeRepeatCbs[i] && gaugeRepeatCbs[i].checked ? 'Yes' : 'No'
         };
     });
     const ws3 = XLSX.utils.json_to_sheet(gfData.length ? gfData : [{ Info: 'No gauge faults' }]);
@@ -1601,6 +1606,7 @@ function exportExcel() {
     // Sheet 4: Twist Faults (auto + manual)
     const allTwistFaultsExport = twistFaults.concat(manualTwistFaults);
     const twistFaultNos = document.querySelectorAll('.fault-no-input[data-type="twist"]');
+    const twistRepeatCbs = document.querySelectorAll('.repeat-fault-cb[data-type="twist"]');
     const tfData = allTwistFaultsExport.map((f, i) => {
         const isManual = f.manual;
         const radius = isManual ? f.curveRadiusLessThan400 : twistFaultRadiusSettings[i];
@@ -1616,7 +1622,7 @@ function exportExcel() {
             'Curve Radius': radius ? '< 400m' : '>= 400m',
             'Category': c ? c.category : '',
             'Required Action': c ? c.action : '',
-            'Source': f.manual ? 'Manual' : 'Auto-detected'
+            'Repeat Fault': twistRepeatCbs[i] && twistRepeatCbs[i].checked ? 'Yes' : 'No'
         };
     });
     const ws4 = XLSX.utils.json_to_sheet(tfData.length ? tfData : [{ Info: 'No twist faults' }]);
@@ -1689,6 +1695,7 @@ function exportPDF() {
 
     const allGaugeFaultsPdf = gaugeFaults.concat(manualGaugeFaults);
     const pdfGaugeFaultNos = document.querySelectorAll('.fault-no-input[data-type="gauge"]');
+    const pdfGaugeRepeatCbs = document.querySelectorAll('.repeat-fault-cb[data-type="gauge"]');
     if (allGaugeFaultsPdf.length === 0) {
         doc.setFontSize(11);
         doc.setTextColor(100);
@@ -1696,7 +1703,7 @@ function exportPDF() {
     } else {
         doc.autoTable({
             startY: 28,
-            head: [['#', 'Fault No.', 'Start', 'End', 'Length', 'Worst Gauge', 'Deviation', 'Type', 'Cat.', 'Required Action']],
+            head: [['#', 'Fault No.', 'Start', 'End', 'Length', 'Worst Gauge', 'Deviation', 'Type', 'Cat.', 'Required Action', 'Repeat']],
             body: allGaugeFaultsPdf.map((f, i) => {
                 const c = classifyGaugeFault(f.worstGauge, lineSpeed);
                 return [
@@ -1706,13 +1713,14 @@ function exportPDF() {
                     f.worstGauge.toFixed(1), f.deviation,
                     c ? c.type : (f.direction === 'wide' ? 'Wide' : 'Tight'),
                     c ? c.category : '',
-                    c ? c.action : ''
+                    c ? c.action : '',
+                    pdfGaugeRepeatCbs[i] && pdfGaugeRepeatCbs[i].checked ? 'Yes' : 'No'
                 ];
             }),
             theme: 'striped',
             headStyles: { fillColor: [26, 26, 46] },
             styles: { fontSize: 7 },
-            columnStyles: { 9: { cellWidth: 55 } }
+            columnStyles: { 9: { cellWidth: 50 } }
         });
     }
 
@@ -1736,6 +1744,7 @@ function exportPDF() {
 
     const allTwistFaultsPdf = twistFaults.concat(manualTwistFaults);
     const pdfTwistFaultNos = document.querySelectorAll('.fault-no-input[data-type="twist"]');
+    const pdfTwistRepeatCbs = document.querySelectorAll('.repeat-fault-cb[data-type="twist"]');
     if (allTwistFaultsPdf.length === 0) {
         doc.setFontSize(11);
         doc.setTextColor(100);
@@ -1743,7 +1752,7 @@ function exportPDF() {
     } else {
         doc.autoTable({
             startY: 28,
-            head: [['#', 'Fault No.', 'Start', 'End', 'Length', 'Max |Twist|', 'Worst', 'Curve R', 'Cat.', 'Required Action']],
+            head: [['#', 'Fault No.', 'Start', 'End', 'Length', 'Max |Twist|', 'Worst', 'Curve R', 'Cat.', 'Required Action', 'Repeat']],
             body: allTwistFaultsPdf.map((f, i) => {
                 const isManual = f.manual;
                 const radius = isManual ? f.curveRadiusLessThan400 : twistFaultRadiusSettings[i];
@@ -1755,13 +1764,14 @@ function exportPDF() {
                     f.maxAbsTwist.toFixed(1), f.worstValue.toFixed(1),
                     radius ? '< 400m' : '>= 400m',
                     c ? c.category : '',
-                    c ? c.action : ''
+                    c ? c.action : '',
+                    pdfTwistRepeatCbs[i] && pdfTwistRepeatCbs[i].checked ? 'Yes' : 'No'
                 ];
             }),
             theme: 'striped',
             headStyles: { fillColor: [26, 26, 46] },
             styles: { fontSize: 7 },
-            columnStyles: { 9: { cellWidth: 55 } }
+            columnStyles: { 9: { cellWidth: 50 } }
         });
     }
 
