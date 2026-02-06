@@ -109,6 +109,35 @@
         .fault-severity-1 { border-left: 4px solid #e67e22; }
         .fault-severity-2 { border-left: 4px solid #c0392b; }
 
+        .run-info-bar {
+            display: flex; gap: 20px; align-items: center; margin-bottom: 20px;
+            padding: 16px 20px; background: #fff; border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08); flex-wrap: wrap;
+        }
+        .run-info-bar label { font-size: 13px; color: #888; font-weight: 600; }
+        .run-info-bar input {
+            padding: 6px 12px; border: 1px solid #ccc; border-radius: 6px;
+            font-size: 14px; font-family: inherit; min-width: 200px;
+        }
+        .run-info-bar input:focus { outline: none; border-color: #4a6cf7; box-shadow: 0 0 0 2px rgba(74,108,247,0.15); }
+        .run-info-group { display: flex; flex-direction: column; gap: 4px; }
+
+        .sign-off-section {
+            margin-top: 20px; padding: 20px; background: #fafafa; border: 2px solid #ddd;
+            border-radius: 10px;
+        }
+        .sign-off-section h4 { font-size: 14px; color: #1a1a2e; margin-bottom: 16px; border-bottom: 2px solid #ccc; padding-bottom: 8px; }
+        .sign-off-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 16px 32px;
+        }
+        .sign-off-field { display: flex; flex-direction: column; gap: 4px; }
+        .sign-off-field label { font-size: 12px; color: #888; font-weight: 600; text-transform: uppercase; }
+        .sign-off-field input {
+            padding: 8px 12px; border: none; border-bottom: 2px solid #999;
+            background: transparent; font-size: 14px; font-family: inherit;
+        }
+        .sign-off-field input:focus { outline: none; border-bottom-color: #4a6cf7; }
+
         @media print {
             .toolbar, .tabs { display: none; }
             .page { display: block !important; page-break-after: always; }
@@ -140,6 +169,17 @@
         <button class="btn-back" onclick="goBack()">Load New File</button>
         <button class="btn-excel" onclick="exportExcel()">Export Excel</button>
         <button class="btn-pdf" onclick="exportPDF()">Export PDF</button>
+    </div>
+
+    <div class="run-info-bar">
+        <div class="run-info-group">
+            <label>Run Name</label>
+            <input type="text" id="runNameInput" placeholder="Enter run name...">
+        </div>
+        <div class="run-info-group">
+            <label>Inspector</label>
+            <input type="text" id="inspectorInput" placeholder="Enter inspector name...">
+        </div>
     </div>
 
     <div class="tabs">
@@ -179,6 +219,7 @@
                     <thead>
                         <tr>
                             <th>#</th>
+                            <th>Fault No.</th>
                             <th>Start Location</th>
                             <th>End Location</th>
                             <th>Length (yds)</th>
@@ -188,6 +229,27 @@
                     </thead>
                     <tbody></tbody>
                 </table>
+            </div>
+            <div class="sign-off-section">
+                <h4>Section Manager Sign-Off</h4>
+                <div class="sign-off-grid">
+                    <div class="sign-off-field">
+                        <label>Name</label>
+                        <input type="text" id="gaugeSignOffName" placeholder="">
+                    </div>
+                    <div class="sign-off-field">
+                        <label>Date</label>
+                        <input type="date" id="gaugeSignOffDate">
+                    </div>
+                    <div class="sign-off-field">
+                        <label>Signature</label>
+                        <input type="text" id="gaugeSignOffSig" placeholder="">
+                    </div>
+                    <div class="sign-off-field">
+                        <label>Comments</label>
+                        <input type="text" id="gaugeSignOffComments" placeholder="">
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -204,6 +266,7 @@
                     <thead>
                         <tr>
                             <th>#</th>
+                            <th>Fault No.</th>
                             <th>Start Location</th>
                             <th>End Location</th>
                             <th>Length (yds)</th>
@@ -213,6 +276,27 @@
                     </thead>
                     <tbody></tbody>
                 </table>
+            </div>
+            <div class="sign-off-section">
+                <h4>Section Manager Sign-Off</h4>
+                <div class="sign-off-grid">
+                    <div class="sign-off-field">
+                        <label>Name</label>
+                        <input type="text" id="twistSignOffName" placeholder="">
+                    </div>
+                    <div class="sign-off-field">
+                        <label>Date</label>
+                        <input type="date" id="twistSignOffDate">
+                    </div>
+                    <div class="sign-off-field">
+                        <label>Signature</label>
+                        <input type="text" id="twistSignOffSig" placeholder="">
+                    </div>
+                    <div class="sign-off-field">
+                        <label>Comments</label>
+                        <input type="text" id="twistSignOffComments" placeholder="">
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -578,7 +662,6 @@ function buildCharts() {
 
     // Twist chart - only plot Twist 1 values, show null gaps
     const twist1Data = parsedData.map(r => r.twist1);
-    const twist2Data = parsedData.map(r => r.twist2);
 
     const twistCtx = document.getElementById('twistChart').getContext('2d');
     if (twistChartInstance) twistChartInstance.destroy();
@@ -593,17 +676,6 @@ function buildCharts() {
                     borderColor: '#e67e22',
                     backgroundColor: 'rgba(230,126,34,0.1)',
                     fill: true,
-                    borderWidth: 1.5,
-                    pointRadius: 0,
-                    tension: 0.3,
-                    spanGaps: false
-                },
-                {
-                    label: 'Twist 2 - 5m (mm)',
-                    data: twist2Data,
-                    borderColor: '#8e44ad',
-                    backgroundColor: 'rgba(142,68,173,0.1)',
-                    fill: false,
                     borderWidth: 1.5,
                     pointRadius: 0,
                     tension: 0.3,
@@ -644,7 +716,7 @@ function buildGaugeFaultTable() {
     const tbody = document.querySelector('#gaugeFaultTable tbody');
     tbody.innerHTML = '';
     if (gaugeFaults.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:#888;">No gauge faults detected</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;color:#888;">No gauge faults detected</td></tr>';
         return;
     }
     gaugeFaults.forEach((f, idx) => {
@@ -652,6 +724,7 @@ function buildGaugeFaultTable() {
         tr.className = f.worstDeviation > 5 ? 'fault-severity-2' : 'fault-severity-1';
         tr.innerHTML = `
             <td>${idx + 1}</td>
+            <td><input type="text" class="fault-no-input" data-type="gauge" data-idx="${idx}" placeholder="--" style="width:60px;padding:4px 6px;border:1px solid #ccc;border-radius:4px;font-size:12px;text-align:center;"></td>
             <td>${f.startLocation}</td>
             <td>${f.endLocation}</td>
             <td>${f.length}</td>
@@ -666,7 +739,7 @@ function buildTwistFaultTable() {
     const tbody = document.querySelector('#twistFaultTable tbody');
     tbody.innerHTML = '';
     if (twistFaults.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:#888;">No twist faults detected</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;color:#888;">No twist faults detected</td></tr>';
         return;
     }
     twistFaults.forEach((f, idx) => {
@@ -674,6 +747,7 @@ function buildTwistFaultTable() {
         tr.className = f.maxAbsTwist > 10 ? 'fault-severity-2' : 'fault-severity-1';
         tr.innerHTML = `
             <td>${idx + 1}</td>
+            <td><input type="text" class="fault-no-input" data-type="twist" data-idx="${idx}" placeholder="--" style="width:60px;padding:4px 6px;border:1px solid #ccc;border-radius:4px;font-size:12px;text-align:center;"></td>
             <td>${f.startLocation}</td>
             <td>${f.endLocation}</td>
             <td>${f.length}</td>
@@ -696,7 +770,13 @@ function exportExcel() {
     const wb = XLSX.utils.book_new();
 
     // Sheet 1: Survey Info
-    const metaArr = Object.entries(metadata).map(([k, v]) => ({ Field: k, Value: v }));
+    const runName = document.getElementById('runNameInput').value;
+    const inspector = document.getElementById('inspectorInput').value;
+    const metaArr = [
+        { Field: 'Run Name', Value: runName },
+        { Field: 'Inspector', Value: inspector },
+        ...Object.entries(metadata).map(([k, v]) => ({ Field: k, Value: v }))
+    ];
     const ws1 = XLSX.utils.json_to_sheet(metaArr);
     XLSX.utils.book_append_sheet(wb, ws1, 'Survey Info');
 
@@ -707,7 +787,6 @@ function exportExcel() {
         'Gauge (mm)': r.gauge,
         'X-Level (mm)': r.xlevel,
         'Twist 1 (mm)': r.twist1,
-        'Twist 2 (mm)': r.twist2,
         Zone: r.zone,
         'Gauge Fault': r.gauge < 1430 ? 'YES' : '',
         'Twist Fault': (r.twist1 !== null && (r.twist1 > 11 || r.twist1 < -11)) ? 'YES' : ''
@@ -716,8 +795,10 @@ function exportExcel() {
     XLSX.utils.book_append_sheet(wb, ws2, 'All Data');
 
     // Sheet 3: Gauge Faults
+    const gaugeFaultNos = document.querySelectorAll('.fault-no-input[data-type="gauge"]');
     const gfData = gaugeFaults.map((f, i) => ({
         '#': i + 1,
+        'Fault No.': gaugeFaultNos[i] ? gaugeFaultNos[i].value : '',
         'Start Location': f.startLocation,
         'End Location': f.endLocation,
         'Length (yds)': f.length,
@@ -728,8 +809,10 @@ function exportExcel() {
     XLSX.utils.book_append_sheet(wb, ws3, 'Gauge Faults');
 
     // Sheet 4: Twist Faults
+    const twistFaultNos = document.querySelectorAll('.fault-no-input[data-type="twist"]');
     const tfData = twistFaults.map((f, i) => ({
         '#': i + 1,
+        'Fault No.': twistFaultNos[i] ? twistFaultNos[i].value : '',
         'Start Location': f.startLocation,
         'End Location': f.endLocation,
         'Length (yds)': f.length,
@@ -751,6 +834,9 @@ function exportPDF() {
     const pageWidth = doc.internal.pageSize.getWidth();
 
     // Page 1: Survey info + summary
+    const pdfRunName = document.getElementById('runNameInput').value;
+    const pdfInspector = document.getElementById('inspectorInput').value;
+
     doc.setFontSize(18);
     doc.setTextColor(26, 26, 46);
     doc.text('Track Inspection Report', 14, 20);
@@ -759,13 +845,14 @@ function exportPDF() {
     const route = metadata['Route ID'] || '';
     const track = metadata['Track ID'] || '';
     const jobRef = metadata['Job Reference'] || '';
-    doc.text(`Route: ${route}  |  Track: ${track}  |  ${jobRef}`, 14, 28);
-    doc.text(`${metadata['Start Location'] || ''} to ${metadata['End Location'] || ''}`, 14, 34);
-    doc.text(`Date: ${metadata['Start Time'] || ''}`, 14, 40);
+    doc.text(`Run Name: ${pdfRunName}  |  Inspector: ${pdfInspector}`, 14, 28);
+    doc.text(`Route: ${route}  |  Track: ${track}  |  ${jobRef}`, 14, 34);
+    doc.text(`${metadata['Start Location'] || ''} to ${metadata['End Location'] || ''}`, 14, 40);
+    doc.text(`Date: ${metadata['Start Time'] || ''}`, 14, 46);
 
     // Summary table
     doc.autoTable({
-        startY: 48,
+        startY: 54,
         head: [['Total Points', 'Gauge Faults', 'Twist Faults', 'Min Gauge', 'Max Gauge']],
         body: [[
             parsedData.length,
@@ -797,6 +884,7 @@ function exportPDF() {
     doc.setTextColor(26, 26, 46);
     doc.text('Gauge Faults (Gauge < 1430mm)', 14, 20);
 
+    const pdfGaugeFaultNos = document.querySelectorAll('.fault-no-input[data-type="gauge"]');
     if (gaugeFaults.length === 0) {
         doc.setFontSize(11);
         doc.setTextColor(100);
@@ -804,9 +892,9 @@ function exportPDF() {
     } else {
         doc.autoTable({
             startY: 28,
-            head: [['#', 'Start Location', 'End Location', 'Length (yds)', 'Min Gauge (mm)', 'Worst Deviation (mm)']],
+            head: [['#', 'Fault No.', 'Start Location', 'End Location', 'Length (yds)', 'Min Gauge (mm)', 'Worst Deviation (mm)']],
             body: gaugeFaults.map((f, i) => [
-                i + 1, f.startLocation, f.endLocation, f.length,
+                i + 1, pdfGaugeFaultNos[i] ? pdfGaugeFaultNos[i].value : '', f.startLocation, f.endLocation, f.length,
                 f.minGauge.toFixed(1), '-' + f.worstDeviation.toFixed(1)
             ]),
             theme: 'striped',
@@ -815,12 +903,29 @@ function exportPDF() {
         });
     }
 
+    // Gauge sign-off
+    const gSignY = gaugeFaults.length > 0 ? doc.lastAutoTable.finalY + 12 : 44;
+    doc.setFontSize(12);
+    doc.setTextColor(26, 26, 46);
+    doc.text('Section Manager Sign-Off', 14, gSignY);
+    doc.setFontSize(9);
+    doc.setTextColor(80);
+    const gSignName = document.getElementById('gaugeSignOffName').value;
+    const gSignDate = document.getElementById('gaugeSignOffDate').value;
+    const gSignSig = document.getElementById('gaugeSignOffSig').value;
+    const gSignComments = document.getElementById('gaugeSignOffComments').value;
+    doc.text(`Name: ${gSignName}`, 14, gSignY + 8);
+    doc.text(`Date: ${gSignDate}`, 14, gSignY + 14);
+    doc.text(`Signature: ${gSignSig}`, 120, gSignY + 8);
+    doc.text(`Comments: ${gSignComments}`, 120, gSignY + 14);
+
     // Page 3: Twist Faults
     doc.addPage();
     doc.setFontSize(14);
     doc.setTextColor(26, 26, 46);
     doc.text('Twist Faults (Twist 1 - 3m)', 14, 20);
 
+    const pdfTwistFaultNos = document.querySelectorAll('.fault-no-input[data-type="twist"]');
     if (twistFaults.length === 0) {
         doc.setFontSize(11);
         doc.setTextColor(100);
@@ -828,9 +933,9 @@ function exportPDF() {
     } else {
         doc.autoTable({
             startY: 28,
-            head: [['#', 'Start Location', 'End Location', 'Length (yds)', 'Max |Twist 1| (mm)', 'Worst Value (mm)']],
+            head: [['#', 'Fault No.', 'Start Location', 'End Location', 'Length (yds)', 'Max |Twist 1| (mm)', 'Worst Value (mm)']],
             body: twistFaults.map((f, i) => [
-                i + 1, f.startLocation, f.endLocation, f.length,
+                i + 1, pdfTwistFaultNos[i] ? pdfTwistFaultNos[i].value : '', f.startLocation, f.endLocation, f.length,
                 f.maxAbsTwist.toFixed(1), f.worstValue.toFixed(1)
             ]),
             theme: 'striped',
@@ -838,6 +943,22 @@ function exportPDF() {
             styles: { fontSize: 8 }
         });
     }
+
+    // Twist sign-off
+    const tSignY = twistFaults.length > 0 ? doc.lastAutoTable.finalY + 12 : 44;
+    doc.setFontSize(12);
+    doc.setTextColor(26, 26, 46);
+    doc.text('Section Manager Sign-Off', 14, tSignY);
+    doc.setFontSize(9);
+    doc.setTextColor(80);
+    const tSignName = document.getElementById('twistSignOffName').value;
+    const tSignDate = document.getElementById('twistSignOffDate').value;
+    const tSignSig = document.getElementById('twistSignOffSig').value;
+    const tSignComments = document.getElementById('twistSignOffComments').value;
+    doc.text(`Name: ${tSignName}`, 14, tSignY + 8);
+    doc.text(`Date: ${tSignDate}`, 14, tSignY + 14);
+    doc.text(`Signature: ${tSignSig}`, 120, tSignY + 8);
+    doc.text(`Comments: ${tSignComments}`, 120, tSignY + 14);
 
     const filename = 'TrackInspection_' + (metadata['Route ID'] || 'Report') + '_' +
         (metadata['Track ID'] || '') + '.pdf';
