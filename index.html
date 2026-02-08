@@ -136,6 +136,23 @@
             border-radius: 8px; margin-bottom: 16px; font-size: 13px; color: #856404;
         }
         .speed-warning.visible { display: block; }
+        .caution-warning {
+            padding: 12px 16px; background: #fff5f5; border: 1px solid #f5c2c7;
+            border-radius: 8px; margin-bottom: 16px; font-size: 13px; color: #842029;
+        }
+
+        .override-card {
+            background: #fff; border-radius: 10px; padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 20px;
+        }
+        .override-card summary { cursor: pointer; font-weight: 600; color: #1a1a2e; }
+        .override-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px 20px; margin-top: 16px;
+        }
+        .override-field { display: flex; flex-direction: column; gap: 4px; }
+        .override-field label { font-size: 12px; color: #666; font-weight: 600; }
+        .override-field input { padding: 6px 10px; border: 1px solid #ccc; border-radius: 6px; }
 
         .radius-select {
             padding: 3px 6px; border: 1px solid #ccc; border-radius: 4px;
@@ -328,6 +345,36 @@
     <div class="speed-warning" id="speedWarning">
         Please enter a Line Speed (5-125 mph) above to classify faults against the correct thresholds.
     </div>
+    <div class="caution-warning">
+        Caution: This tool should reflect the correct tolerances, but always verify against the latest standard.
+    </div>
+
+    <details class="override-card" id="overrideCard">
+        <summary>Inspector Override Values</summary>
+        <div class="override-grid">
+            <div class="override-field">
+                <label>
+                    <input type="checkbox" id="overrideToggle">
+                    Enable manual overrides for thresholds
+                </label>
+            </div>
+            <div class="override-field">
+                <label for="overrideGaugeTight">Gauge tight threshold (mm)</label>
+                <input type="number" id="overrideGaugeTight" step="0.1" placeholder="e.g. 1426">
+            </div>
+            <div class="override-field">
+                <label for="overrideGaugeWide">Gauge wide threshold (mm)</label>
+                <input type="number" id="overrideGaugeWide" step="0.1" placeholder="e.g. 1445">
+            </div>
+            <div class="override-field">
+                <label for="overrideTwist">Twist detection threshold (mm)</label>
+                <input type="number" id="overrideTwist" step="0.1" placeholder="e.g. 12">
+            </div>
+        </div>
+        <p style="margin-top:12px;font-size:12px;color:#666;">
+            Overrides affect fault detection thresholds only and should be used sparingly with engineering sign-off.
+        </p>
+    </details>
 
     <div class="tabs">
         <button class="tab active" data-page="overview">Overview &amp; Graphs</button>
@@ -836,19 +883,27 @@ function getTrackCat() {
 }
 
 function getGaugeDetectionThresholds(lineSpeed) {
+    const overrides = getOverrideSettings();
     if (!lineSpeed || lineSpeed < 5) {
         // Default broadest thresholds
-        return { tightBelow: 1430, wideAbove: 1445 };
+        const defaults = { tightBelow: 1430, wideAbove: 1445 };
+        return overrides.enabled ? applyGaugeOverrides(defaults, overrides) : defaults;
     }
     if (lineSpeed >= 105) {
-        return { tightBelow: 1430, wideAbove: 1445 };
+        const defaults = { tightBelow: 1430, wideAbove: 1445 };
+        return overrides.enabled ? applyGaugeOverrides(defaults, overrides) : defaults;
     }
     // 5 to 100mph
-    return { tightBelow: 1426, wideAbove: 1445 };
+    const defaults = { tightBelow: 1426, wideAbove: 1445 };
+    return overrides.enabled ? applyGaugeOverrides(defaults, overrides) : defaults;
 }
 
 // Get the detection threshold for twist (lowest AL = 12mm)
 function getTwistDetectionThreshold() {
+    const overrides = getOverrideSettings();
+    if (overrides.enabled && Number.isFinite(overrides.twist)) {
+        return overrides.twist;
+    }
     return 12;
 }
 
@@ -883,7 +938,13 @@ function handleFiles(files) {
                     filename: file.name,
                     manualGaugeFaults: [],
                     manualTwistFaults: [],
-                    dismissedFaults: {}
+                    dismissedFaults: {},
+                    overrides: {
+                        enabled: false,
+                        gaugeTight: '',
+                        gaugeWide: '',
+                        twist: ''
+                    }
                 });
             } catch (err) {
                 errors.push(file.name + ': ' + err.message);
@@ -1005,6 +1066,7 @@ function switchRun(index) {
     manualGaugeFaults = run.manualGaugeFaults;
     manualTwistFaults = run.manualTwistFaults;
     dismissedFaults = run.dismissedFaults || {};
+    applyOverrideSettings(run.overrides || {});
 
     document.getElementById('runSelector').value = index;
     identifyFaults();
@@ -1207,6 +1269,46 @@ function buildReport() {
     document.getElementById('lineSpeedInput').addEventListener('change', onLineSpeedChange);
     document.getElementById('lineSpeedInput').addEventListener('input', onLineSpeedChange);
     document.getElementById('trackCatInput').addEventListener('change', onLineSpeedChange);
+    document.getElementById('overrideToggle').addEventListener('change', onOverrideChange);
+    document.getElementById('overrideGaugeTight').addEventListener('input', onOverrideChange);
+    document.getElementById('overrideGaugeWide').addEventListener('input', onOverrideChange);
+    document.getElementById('overrideTwist').addEventListener('input', onOverrideChange);
+}
+
+function applyOverrideSettings(overrides) {
+    document.getElementById('overrideToggle').checked = !!overrides.enabled;
+    document.getElementById('overrideGaugeTight').value = overrides.gaugeTight ?? '';
+    document.getElementById('overrideGaugeWide').value = overrides.gaugeWide ?? '';
+    document.getElementById('overrideTwist').value = overrides.twist ?? '';
+}
+
+function getOverrideSettings() {
+    return {
+        enabled: document.getElementById('overrideToggle').checked,
+        gaugeTight: parseFloat(document.getElementById('overrideGaugeTight').value),
+        gaugeWide: parseFloat(document.getElementById('overrideGaugeWide').value),
+        twist: parseFloat(document.getElementById('overrideTwist').value)
+    };
+}
+
+function applyGaugeOverrides(defaults, overrides) {
+    return {
+        tightBelow: Number.isFinite(overrides.gaugeTight) ? overrides.gaugeTight : defaults.tightBelow,
+        wideAbove: Number.isFinite(overrides.gaugeWide) ? overrides.gaugeWide : defaults.wideAbove
+    };
+}
+
+function onOverrideChange() {
+    if (activeRunIndex >= 0 && allRuns[activeRunIndex]) {
+        const overrides = getOverrideSettings();
+        allRuns[activeRunIndex].overrides = {
+            enabled: overrides.enabled,
+            gaugeTight: Number.isFinite(overrides.gaugeTight) ? overrides.gaugeTight : '',
+            gaugeWide: Number.isFinite(overrides.gaugeWide) ? overrides.gaugeWide : '',
+            twist: Number.isFinite(overrides.twist) ? overrides.twist : ''
+        };
+    }
+    onLineSpeedChange();
 }
 
 function onLineSpeedChange() {
