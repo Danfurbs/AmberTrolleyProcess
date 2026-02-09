@@ -1557,13 +1557,17 @@ function buildCharts() {
         gaugeContainer.appendChild(segmentTitle.cloneNode(true));
         gaugeContainer.appendChild(gaugeWrapper);
 
+        const gaugeReference = 1435;
         const gaugeDatasets = [
             {
                 label: 'Gauge (mm)',
                 data: rows.map(r => r.gauge),
                 borderColor: '#4a6cf7',
                 backgroundColor: 'rgba(74,108,247,0.1)',
-                fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.3
+                fill: { target: { value: gaugeReference } },
+                borderWidth: 1.5,
+                pointRadius: 0,
+                tension: 0.3
             }
         ];
 
@@ -2510,7 +2514,8 @@ function exportPDF() {
     const gaugeCanvases = Array.from(document.querySelectorAll('#gaugeCharts canvas'));
     const twistCanvases = Array.from(document.querySelectorAll('#twistCharts canvas'));
     const chartW = pageWidth - 28;
-    const chartH = 70;
+    const chartH = 55;
+    const chartGap = 4;
     const pageHeight = doc.internal.pageSize.getHeight();
     let chartY = doc.lastAutoTable.finalY + 8;
 
@@ -2519,13 +2524,13 @@ function exportPDF() {
         const gaugeCanvas = gaugeCanvases[i];
         const twistCanvas = twistCanvases[i];
         if (!gaugeCanvas || !twistCanvas) continue;
-        const blockHeight = chartH * 2 + 10;
+        const blockHeight = chartH * 2 + (chartGap * 2);
         if (chartY + blockHeight > pageHeight - 10) {
             doc.addPage();
             chartY = 20;
         }
         doc.addImage(gaugeCanvas.toDataURL('image/png'), 'PNG', 14, chartY, chartW, chartH);
-        doc.addImage(twistCanvas.toDataURL('image/png'), 'PNG', 14, chartY + chartH + 6, chartW, chartH);
+        doc.addImage(twistCanvas.toDataURL('image/png'), 'PNG', 14, chartY + chartH + chartGap, chartW, chartH);
         chartY += blockHeight;
     }
 
