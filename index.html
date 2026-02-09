@@ -396,8 +396,8 @@
         <div class="card">
             <h3>Fault Location Schematic</h3>
             <p style="margin-bottom:8px;color:#666;font-size:12px;">Linear diagram showing fault positions along the track. Colour indicates severity.</p>
-            <div id="schematicContainer" style="overflow-x:auto;">
-                <canvas id="schematicCanvas" height="120"></canvas>
+            <div id="schematicContainer" style="overflow-x:auto;padding:8px 4px 0;background:#fafafa;border-radius:8px;border:1px solid #eee;">
+                <canvas id="schematicCanvas" height="180"></canvas>
             </div>
         </div>
 
@@ -1557,13 +1557,17 @@ function buildCharts() {
         gaugeContainer.appendChild(segmentTitle.cloneNode(true));
         gaugeContainer.appendChild(gaugeWrapper);
 
+        const gaugeReference = 1435;
         const gaugeDatasets = [
             {
                 label: 'Gauge (mm)',
                 data: rows.map(r => r.gauge),
                 borderColor: '#4a6cf7',
                 backgroundColor: 'rgba(74,108,247,0.1)',
-                fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.3
+                fill: { target: { value: gaugeReference } },
+                borderWidth: 1.5,
+                pointRadius: 0,
+                tension: 0.3
             }
         ];
 
@@ -1998,15 +2002,15 @@ function buildSchematic() {
     const range = maxPos - minPos || 1;
 
     // Canvas sizing
-    const w = Math.max(container.clientWidth - 20, 600);
-    const h = 160;
+    const w = Math.max(container.clientWidth - 20, 700);
+    const h = 190;
     const dpr = window.devicePixelRatio || 1;
     canvas.width = w * dpr;
     canvas.height = h * dpr;
     canvas.style.width = w + 'px';
     canvas.style.height = h + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const padL = 60, padR = 20, trackY = 60, trackH = 10;
+    const padL = 70, padR = 30, trackY = 72, trackH = 12;
     const drawW = w - padL - padR;
 
     function posToX(miles, yards) {
@@ -2016,11 +2020,15 @@ function buildSchematic() {
     // Clear
     ctx.clearRect(0, 0, w, h);
 
+    // Background panel
+    ctx.fillStyle = '#fafafa';
+    ctx.fillRect(0, 0, w, h);
+
     // Draw track baseline
-    ctx.fillStyle = '#ddd';
+    ctx.fillStyle = '#e3e6eb';
     ctx.fillRect(padL, trackY - 1, drawW, trackH);
-    ctx.strokeStyle = '#999';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#9aa3ad';
+    ctx.lineWidth = 1.2;
     ctx.strokeRect(padL, trackY - 1, drawW, trackH);
 
     // Tick marks
@@ -2041,6 +2049,15 @@ function buildSchematic() {
         }
     }
 
+    // Start/end labels
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#555';
+    ctx.font = '10px sans-serif';
+    ctx.fillText(parsedData[0].miles + 'mi ' + parsedData[0].yards.toFixed(1) + 'yds', padL, trackY - 18);
+    ctx.textAlign = 'right';
+    const lastPoint = parsedData[parsedData.length - 1];
+    ctx.fillText(lastPoint.miles + 'mi ' + lastPoint.yards.toFixed(1) + 'yds', padL + drawW, trackY - 18);
+
     // Colour map for categories
     const catColours = { 'IAL': '#c0392b', 'IL': '#e67e22', 'AL': '#28a745' };
 
@@ -2054,7 +2071,7 @@ function buildSchematic() {
         const x2 = posToX(f.endMiles || f.startMiles, f.endYards || f.startYards);
         const faultW = Math.max(x2 - x1, 3);
         ctx.fillStyle = catColours[c.category] || '#999';
-        ctx.fillRect(x1, trackY - 14, faultW, 12);
+        ctx.fillRect(x1, trackY - 20, faultW, 14);
     });
 
     // Draw twist faults (below track)
@@ -2068,23 +2085,23 @@ function buildSchematic() {
         const x2 = posToX(f.endMiles || f.startMiles, f.endYards || f.startYards);
         const faultW = Math.max(x2 - x1, 3);
         ctx.fillStyle = catColours[c.category] || '#999';
-        ctx.fillRect(x1, trackY + trackH + 2, faultW, 12);
+        ctx.fillRect(x1, trackY + trackH + 4, faultW, 14);
     });
 
     // Labels
     ctx.fillStyle = '#333';
-    ctx.font = '10px sans-serif';
+    ctx.font = '11px sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillText('Gauge', padL - 6, trackY - 5);
-    ctx.fillText('Twist', padL - 6, trackY + trackH + 12);
+    ctx.fillText('Gauge', padL - 10, trackY - 8);
+    ctx.fillText('Twist', padL - 10, trackY + trackH + 18);
 
     // Legend
     ctx.textAlign = 'left';
     let lx = padL;
-    const ly = h - 12;
+    const ly = h - 14;
     [['IAL', '#c0392b'], ['IL', '#e67e22'], ['AL', '#28a745']].forEach(([label, col]) => {
         ctx.fillStyle = col;
-        ctx.fillRect(lx, ly - 8, 12, 10);
+        ctx.fillRect(lx, ly - 9, 12, 10);
         ctx.fillStyle = '#333';
         ctx.font = '10px sans-serif';
         ctx.fillText(label, lx + 15, ly);
@@ -2111,7 +2128,7 @@ function buildSchematic() {
             ctx.strokeStyle = '#666';
             ctx.lineWidth = 1.5;
             ctx.setLineDash([3, 2]);
-            ctx.strokeRect(x1, trackY - 14, faultW, 12);
+            ctx.strokeRect(x1, trackY - 20, faultW, 14);
             ctx.setLineDash([]);
         });
         (previousRunData.twistFaults || []).forEach(f => {
@@ -2122,7 +2139,7 @@ function buildSchematic() {
             ctx.strokeStyle = '#666';
             ctx.lineWidth = 1.5;
             ctx.setLineDash([3, 2]);
-            ctx.strokeRect(x1, trackY + trackH + 2, faultW, 12);
+            ctx.strokeRect(x1, trackY + trackH + 4, faultW, 14);
             ctx.setLineDash([]);
         });
     }
@@ -2510,7 +2527,8 @@ function exportPDF() {
     const gaugeCanvases = Array.from(document.querySelectorAll('#gaugeCharts canvas'));
     const twistCanvases = Array.from(document.querySelectorAll('#twistCharts canvas'));
     const chartW = pageWidth - 28;
-    const chartH = 70;
+    const baseChartH = 55;
+    const chartGap = 4;
     const pageHeight = doc.internal.pageSize.getHeight();
     let chartY = doc.lastAutoTable.finalY + 8;
 
@@ -2519,13 +2537,24 @@ function exportPDF() {
         const gaugeCanvas = gaugeCanvases[i];
         const twistCanvas = twistCanvases[i];
         if (!gaugeCanvas || !twistCanvas) continue;
-        const blockHeight = chartH * 2 + 10;
+        let chartH = baseChartH;
+        let blockHeight = chartH * 2 + (chartGap * 2);
+        const availableHeight = pageHeight - chartY - 10;
+        if (availableHeight < blockHeight) {
+            const scaled = Math.max((availableHeight - (chartGap * 2)) / 2, 36);
+            if (scaled < chartH) {
+                chartH = scaled;
+                blockHeight = chartH * 2 + (chartGap * 2);
+            }
+        }
         if (chartY + blockHeight > pageHeight - 10) {
             doc.addPage();
             chartY = 20;
+            chartH = baseChartH;
+            blockHeight = chartH * 2 + (chartGap * 2);
         }
         doc.addImage(gaugeCanvas.toDataURL('image/png'), 'PNG', 14, chartY, chartW, chartH);
-        doc.addImage(twistCanvas.toDataURL('image/png'), 'PNG', 14, chartY + chartH + 6, chartW, chartH);
+        doc.addImage(twistCanvas.toDataURL('image/png'), 'PNG', 14, chartY + chartH + chartGap, chartW, chartH);
         chartY += blockHeight;
     }
 
