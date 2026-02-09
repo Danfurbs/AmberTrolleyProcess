@@ -195,6 +195,19 @@
         .run-selector-bar select:focus { outline: none; border-color: #4a6cf7; box-shadow: 0 0 0 2px rgba(74,108,247,0.15); }
         .run-selector-bar .run-count { font-size: 12px; color: #666; padding: 4px 10px; background: #eef; border-radius: 12px; }
 
+        .trace-controls {
+            display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+            margin: 12px 0 14px; padding: 10px 12px;
+            background: #f8f9ff; border: 1px solid #dde3ff; border-radius: 8px;
+            font-size: 12px; color: #555;
+        }
+        .trace-controls label { display: flex; gap: 6px; align-items: center; font-weight: 600; color: #444; }
+        .trace-controls input[type="number"] {
+            width: 120px; padding: 4px 6px; border: 1px solid #ccc; border-radius: 6px;
+            font-size: 12px; font-family: inherit;
+        }
+        .trace-controls input[type="checkbox"] { transform: translateY(1px); }
+
         .btn-add-fault {
             padding: 8px 16px; border: 2px dashed #4a6cf7; border-radius: 6px;
             background: #f0f4ff; color: #4a6cf7; cursor: pointer; font-size: 13px;
@@ -1530,6 +1543,23 @@ function splitDataByYards(data, segmentLength) {
     }).filter(segment => segment.rows.length);
 }
 
+function buildPreviousTraceSeries(rows, field) {
+    if (!previousRunData || !previousRunTraceEnabled || !Array.isArray(previousRunData.traceData)) {
+        return null;
+    }
+    if (!previousRunData.traceLookup) {
+        buildPreviousTraceLookup();
+    }
+    const data = rows.map(row => {
+        const pos = row.miles * 1760 + row.yards;
+        const prev = getPreviousTraceAtPosition(pos);
+        if (!prev || prev[field] === undefined || prev[field] === null) return null;
+        return prev[field];
+    });
+    const hasData = data.some(value => value !== null);
+    return hasData ? data : null;
+}
+
 function buildCharts() {
     const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
     const segments = splitDataByYards(parsedData, 440);
@@ -1579,6 +1609,19 @@ function buildCharts() {
                 tension: 0.3
             }
         ];
+        const prevGaugeData = buildPreviousTraceSeries(rows, 'gauge');
+        if (prevGaugeData) {
+            gaugeDatasets.push({
+                label: 'Prev Gauge (mm)',
+                data: prevGaugeData,
+                borderColor: '#555',
+                borderWidth: 1.5,
+                borderDash: [6, 3],
+                pointRadius: 0,
+                fill: false,
+                tension: 0.3
+            });
+        }
 
         const gaugeThresholds = getGaugeChartThresholds(lineSpeed);
         gaugeThresholds.forEach(t => {
@@ -1629,6 +1672,20 @@ function buildCharts() {
                 borderColor: '#aaa', borderWidth: 1, borderDash: [3, 3], pointRadius: 0, fill: false
             }
         ];
+        const prevTwistData = buildPreviousTraceSeries(rows, 'twist1');
+        if (prevTwistData) {
+            twistDatasets.push({
+                label: 'Prev Twist 1 - 3m (mm)',
+                data: prevTwistData,
+                borderColor: '#555',
+                borderWidth: 1.5,
+                borderDash: [6, 3],
+                pointRadius: 0,
+                fill: false,
+                tension: 0.3,
+                spanGaps: false
+            });
+        }
 
         const twistThresholds = getTwistChartThresholds(lineSpeed);
         twistThresholds.forEach(t => {
@@ -1693,6 +1750,20 @@ function buildCharts() {
                 borderColor: '#aaa', borderWidth: 1, borderDash: [3, 3], pointRadius: 0, fill: false
             }
         ];
+        const prevXLevelData = buildPreviousTraceSeries(rows, 'xlevel');
+        if (prevXLevelData) {
+            xLevelDatasets.push({
+                label: 'Prev Cant (X-Level) (mm)',
+                data: prevXLevelData,
+                borderColor: '#555',
+                borderWidth: 1.5,
+                borderDash: [6, 3],
+                pointRadius: 0,
+                fill: false,
+                tension: 0.3,
+                spanGaps: false
+            });
+        }
 
         const xLevelChart = new Chart(xLevelCanvas.getContext('2d'), {
             type: 'line',
@@ -2182,7 +2253,56 @@ function buildSchematic() {
 }
 
 // ---- Previous Run PDF Comparison ----
-let previousRunData = null; // {gaugeFaults:[], twistFaults:[], metadata:{}, lineSpeed, trackCat}
+let previousRunData = null; // {gaugeFaults:[], twistFaults:[], metadata:{}, lineSpeed, trackCat, traceData:[]}
+let previousRunTraceOffsetYards = 0;
+let previousRunTraceEnabled = true;
+
+function buildPreviousTraceLookup() {
+    if (!previousRunData || !Array.isArray(previousRunData.traceData)) {
+        return null;
+    }
+    const map = new Map();
+    previousRunData.traceData.forEach(row => {
+        if (row.miles === undefined || row.yards === undefined) return;
+        const pos = row.miles * 1760 + row.yards;
+        const key = Math.round(pos * 10);
+        map.set(key, row);
+    });
+    previousRunData.traceLookup = map;
+    return map;
+}
+
+function getPreviousTraceAtPosition(positionYards) {
+    if (!previousRunData || !previousRunData.traceLookup || !previousRunTraceEnabled) return null;
+    const shifted = positionYards - previousRunTraceOffsetYards;
+    const baseKey = Math.round(shifted * 10);
+    if (previousRunData.traceLookup.has(baseKey)) {
+        return previousRunData.traceLookup.get(baseKey);
+    }
+    const tolerance = 5;
+    for (let i = 1; i <= tolerance; i++) {
+        const plus = baseKey + i;
+        const minus = baseKey - i;
+        if (previousRunData.traceLookup.has(plus)) return previousRunData.traceLookup.get(plus);
+        if (previousRunData.traceLookup.has(minus)) return previousRunData.traceLookup.get(minus);
+    }
+    return null;
+}
+
+function updatePreviousTraceOverlay() {
+    buildCharts();
+}
+
+function setPreviousRunTraceEnabled(checked) {
+    previousRunTraceEnabled = checked;
+    updatePreviousTraceOverlay();
+}
+
+function setPreviousRunOffset(value) {
+    const parsed = parseFloat(value);
+    previousRunTraceOffsetYards = Number.isFinite(parsed) ? parsed : 0;
+    updatePreviousTraceOverlay();
+}
 
 function loadPreviousRunPDF(inputEl) {
     const file = inputEl.files[0];
@@ -2215,9 +2335,14 @@ function loadPreviousRunPDF(inputEl) {
                 previousRunData = await parsePreviousRunFromText(pdf);
             }
 
+            previousRunData.metadata = previousRunData.metadata || {};
             previousRunData.filename = file.name;
+            previousRunTraceOffsetYards = 0;
+            previousRunTraceEnabled = true;
+            buildPreviousTraceLookup();
             updateComparison();
             buildSchematic();
+            buildCharts();
         } catch(err) {
             alert('Error reading previous PDF: ' + err.message);
             console.error(err);
@@ -2296,10 +2421,13 @@ async function parsePreviousRunFromText(pdf) {
 
 function clearPreviousRun() {
     previousRunData = null;
+    previousRunTraceOffsetYards = 0;
+    previousRunTraceEnabled = true;
     document.getElementById('prevRunInput').value = '';
     document.getElementById('comparisonResults').style.display = 'none';
     document.getElementById('comparisonEmpty').style.display = 'block';
     buildSchematic();
+    buildCharts();
 }
 
 function updateComparison() {
@@ -2316,6 +2444,7 @@ function updateComparison() {
     const allTF = twistFaults.concat(manualTwistFaults);
     const prevGF = previousRunData.gaugeFaults || [];
     const prevTF = previousRunData.twistFaults || [];
+    const traceAvailable = Array.isArray(previousRunData.traceData) && previousRunData.traceData.length > 0;
 
     // Compare faults by location overlap
     function locOverlaps(a, b) {
@@ -2371,6 +2500,20 @@ function updateComparison() {
             <span class="comp-new">New fault</span>
             <span class="comp-resolved">Resolved</span>
             <span class="comp-persists">Persisting</span>
+        </div>
+        <div class="trace-controls">
+            <label>
+                <input type="checkbox" ${previousRunTraceEnabled ? 'checked' : ''} ${traceAvailable ? '' : 'disabled'}
+                    onchange="setPreviousRunTraceEnabled(this.checked)">
+                Show previous run traces
+            </label>
+            <label>
+                Trace offset (yds)
+                <input type="number" step="0.1" value="${previousRunTraceOffsetYards}"
+                    ${traceAvailable ? '' : 'disabled'}
+                    oninput="setPreviousRunOffset(this.value)">
+            </label>
+            <span>${traceAvailable ? 'Adjust offset to align traces.' : 'No trace data found in this PDF.'}</span>
         </div>
         <h4 style="font-size:13px;color:#1a1a2e;margin:12px 0 6px;">Gauge Faults Comparison</h4>
     `;
@@ -2739,6 +2882,13 @@ function exportPDF() {
             endMiles: f.endMiles, endYards: f.endYards,
             startLocation: f.startLocation, endLocation: f.endLocation,
             maxAbsTwist: f.maxAbsTwist, worstValue: f.worstValue, length: f.length
+        })),
+        traceData: parsedData.map(r => ({
+            miles: r.miles,
+            yards: r.yards,
+            gauge: r.gauge,
+            twist1: r.twist1,
+            xlevel: r.xlevel
         })),
         metadata: { 'Route ID': metadata['Route ID'] || '', 'Track ID': metadata['Track ID'] || '' },
         lineSpeed: lineSpeed,
