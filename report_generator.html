@@ -79,7 +79,9 @@
         .meta-item .value { font-weight: 600; color: #333; }
 
         .chart-row { display: grid; grid-template-columns: 1fr; gap: 20px; }
+        .chart-stack { display: grid; gap: 16px; }
         .chart-wrapper { position: relative; height: 300px; }
+        .chart-segment-title { font-size: 12px; color: #666; margin: 4px 0 6px; }
         canvas { width: 100% !important; }
 
         table {
@@ -401,11 +403,11 @@
 
         <div class="card">
             <h3>Gauge Profile (mm)</h3>
-            <div class="chart-wrapper"><canvas id="gaugeChart"></canvas></div>
+            <div id="gaugeCharts" class="chart-stack"></div>
         </div>
         <div class="card">
             <h3>Twist over 3m (mm)</h3>
-            <div class="chart-wrapper"><canvas id="twistChart"></canvas></div>
+            <div id="twistCharts" class="chart-stack"></div>
         </div>
 
         <!-- Previous Run Comparison -->
@@ -669,8 +671,8 @@ let parsedData = null;
 let gaugeFaults = [];
 let twistFaults = [];
 let metadata = {};
-let gaugeChartInstance = null;
-let twistChartInstance = null;
+let gaugeChartInstances = [];
+let twistChartInstances = [];
 
 // Dismissed faults: keyed by "gauge-{idx}" or "twist-{idx}", stores {timestamp, comment, inspector}
 let dismissedFaults = {};
@@ -958,6 +960,33 @@ function handleFiles(files) {
     });
 }
 
+function normalizeHeaderLabel(label) {
+    return (label || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function buildHeaderMap(cells) {
+    const map = {};
+    cells.forEach((cell, idx) => {
+        const label = normalizeHeaderLabel(cell);
+        if (label === 'miles' && map.miles === undefined) map.miles = idx;
+        if (label === 'yards' && map.yards === undefined) map.yards = idx;
+        if ((label.includes('gauge delta') || (label.startsWith('gauge') && label.includes('delta'))) && map.gaugeDelta === undefined) {
+            map.gaugeDelta = idx;
+        }
+        if (label.startsWith('gauge') && !label.includes('delta') && !label.includes('x-level') && map.gauge === undefined) {
+            map.gauge = idx;
+        }
+        if (label.startsWith('x-level') && map.xlevel === undefined) map.xlevel = idx;
+        if (label.startsWith('twist 1') && map.twist1 === undefined) map.twist1 = idx;
+        if (label.startsWith('twist 2') && map.twist2 === undefined) map.twist2 = idx;
+        if (label.startsWith('gps') && map.gps === undefined) map.gps = idx;
+        if ((label.includes('zone reference') || label.includes('default zones') || label === 'zone' || label.startsWith('zone ')) && map.zone === undefined) {
+            map.zone = idx;
+        }
+    });
+    return map;
+}
+
 function parseDataForRun(content) {
     let lines;
     if (content.includes('<table') || content.includes('<TABLE')) {
@@ -969,6 +998,7 @@ function parseDataForRun(content) {
     const meta = {};
     const dataRows = [];
     let headerFound = false;
+    let headerMap = null;
 
     for (let i = 0; i < lines.length; i++) {
         const line = typeof lines[i] === 'string' ? lines[i] : lines[i].join('\t');
@@ -978,6 +1008,7 @@ function parseDataForRun(content) {
 
         if (!headerFound && cells[0] === 'Miles' && cells[1] === 'Yards') {
             headerFound = true;
+            headerMap = buildHeaderMap(cells);
             continue;
         }
 
@@ -998,14 +1029,28 @@ function parseDataForRun(content) {
         }
 
         if (headerFound && cells[0] && !isNaN(parseFloat(cells[0]))) {
+            const getCell = (key, fallbackIdx) => {
+                if (headerMap && Number.isFinite(headerMap[key])) {
+                    return cells[headerMap[key]];
+                }
+                return cells[fallbackIdx];
+            };
+            const milesCell = getCell('miles', 0);
+            const yardsCell = getCell('yards', 1);
             const row = {
-                miles: parseFloat(cells[0]),
-                yards: parseFloat(cells[1]),
-                gauge: parseFloat(cells[2]),
-                xlevel: parseFloat(cells[3]),
-                twist1: cells[4] !== '' && cells[4] !== undefined ? parseFloat(cells[4]) : null,
-                twist2: cells[5] !== '' && cells[5] !== undefined ? parseFloat(cells[5]) : null,
-                zone: cells[7] || cells[6] || ''
+                miles: parseFloat(milesCell),
+                yards: parseFloat(yardsCell),
+                gauge: parseFloat(getCell('gauge', 2)),
+                xlevel: parseFloat(getCell('xlevel', 3)),
+                twist1: (() => {
+                    const cell = getCell('twist1', 4);
+                    return cell !== '' && cell !== undefined ? parseFloat(cell) : null;
+                })(),
+                twist2: (() => {
+                    const cell = getCell('twist2', 5);
+                    return cell !== '' && cell !== undefined ? parseFloat(cell) : null;
+                })(),
+                zone: getCell('zone', 7) || getCell('zone', 6) || ''
             };
             if (!isNaN(row.miles) && !isNaN(row.yards) && !isNaN(row.gauge)) {
                 row.location = row.miles + 'mi ' + row.yards.toFixed(1) + 'yds';
@@ -1068,6 +1113,11 @@ function switchRun(index) {
     dismissedFaults = run.dismissedFaults || {};
     applyOverrideSettings(run.overrides || {});
 
+    const derivedSpeed = getLineSpeedFromZones(parsedData);
+    if (Number.isFinite(derivedSpeed)) {
+        document.getElementById('lineSpeedInput').value = derivedSpeed;
+    }
+
     document.getElementById('runSelector').value = index;
     identifyFaults();
     buildReport();
@@ -1100,6 +1150,34 @@ function parseHTMLTable(html) {
 
 function formatLocation(row) {
     return row.miles + 'mi ' + row.yards.toFixed(1) + 'yds';
+}
+
+function parseZoneSpeedValue(zoneText) {
+    if (!zoneText) return null;
+    const rangeMatch = zoneText.match(/(\d+)\s*-\s*(\d+)\s*mph/i);
+    if (rangeMatch) return parseInt(rangeMatch[2], 10);
+    const singleMatch = zoneText.match(/(\d+)\s*mph/i);
+    if (singleMatch) return parseInt(singleMatch[1], 10);
+    return null;
+}
+
+function getLineSpeedFromZones(data) {
+    const counts = new Map();
+    data.forEach(row => {
+        const speed = parseZoneSpeedValue(row.zone);
+        if (!Number.isFinite(speed)) return;
+        counts.set(speed, (counts.get(speed) || 0) + 1);
+    });
+    if (counts.size === 0) return null;
+    let bestSpeed = null;
+    let bestCount = -1;
+    counts.forEach((count, speed) => {
+        if (count > bestCount) {
+            bestCount = count;
+            bestSpeed = speed;
+        }
+    });
+    return bestSpeed;
 }
 
 // ---- Fault Identification ----
@@ -1423,112 +1501,163 @@ function getTwistChartThresholds(lineSpeed) {
     return lines;
 }
 
+function splitDataByYards(data, segmentLength) {
+    if (!data.length) return [];
+    const positions = data.map(r => r.miles * 1760 + r.yards);
+    const minPos = Math.min(...positions);
+    const segments = [];
+    data.forEach((row, idx) => {
+        const pos = positions[idx];
+        const segmentIndex = Math.floor((pos - minPos) / segmentLength);
+        if (!segments[segmentIndex]) {
+            segments[segmentIndex] = { rows: [] };
+        }
+        segments[segmentIndex].rows.push(row);
+    });
+    return segments.map((segment, index) => {
+        const rows = segment.rows;
+        return {
+            rows,
+            index,
+            startLabel: rows.length ? formatLocation(rows[0]) : '',
+            endLabel: rows.length ? formatLocation(rows[rows.length - 1]) : ''
+        };
+    }).filter(segment => segment.rows.length);
+}
+
 function buildCharts() {
     const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
-    const labels = parsedData.map(r => r.miles + 'mi ' + r.yards.toFixed(0) + 'y');
-    const step = Math.max(1, Math.floor(parsedData.length / 30));
-    const displayLabels = labels.map((l, i) => i % step === 0 ? l : '');
-    const n = parsedData.length;
+    const segments = splitDataByYards(parsedData, 440);
+    const gaugeContainer = document.getElementById('gaugeCharts');
+    const twistContainer = document.getElementById('twistCharts');
 
-    // ---- Gauge chart ----
-    const gaugeCtx = document.getElementById('gaugeChart').getContext('2d');
-    if (gaugeChartInstance) gaugeChartInstance.destroy();
+    gaugeChartInstances.forEach(chart => chart.destroy());
+    twistChartInstances.forEach(chart => chart.destroy());
+    gaugeChartInstances = [];
+    twistChartInstances = [];
+    gaugeContainer.innerHTML = '';
+    twistContainer.innerHTML = '';
 
-    const gaugeDatasets = [
-        {
-            label: 'Gauge (mm)',
-            data: parsedData.map(r => r.gauge),
-            borderColor: '#4a6cf7',
-            backgroundColor: 'rgba(74,108,247,0.1)',
-            fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.3
-        }
-    ];
+    segments.forEach(segment => {
+        const rows = segment.rows;
+        const labels = rows.map(r => r.miles + 'mi ' + r.yards.toFixed(0) + 'y');
+        const step = Math.max(1, Math.floor(rows.length / 30));
+        const displayLabels = labels.map((l, i) => i % step === 0 ? l : '');
+        const n = rows.length;
 
-    const gaugeThresholds = getGaugeChartThresholds(lineSpeed);
-    gaugeThresholds.forEach(t => {
-        gaugeDatasets.push({
-            label: t.label,
-            data: Array(n).fill(t.value),
-            borderColor: t.color, borderWidth: t.width, borderDash: t.dash,
-            pointRadius: 0, fill: false
-        });
-    });
+        const segmentTitle = document.createElement('div');
+        segmentTitle.className = 'chart-segment-title';
+        segmentTitle.textContent = `${segment.startLabel} → ${segment.endLabel} (max 440 yds)`;
 
-    gaugeChartInstance = new Chart(gaugeCtx, {
-        type: 'line',
-        data: { labels: displayLabels, datasets: gaugeDatasets },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { position: 'top', labels: { usePointStyle: true, padding: 12, font: { size: 10 } } },
-                tooltip: { callbacks: { title: (items) => labels[items[0].dataIndex] } }
-            },
-            scales: {
-                x: { ticks: { maxRotation: 45, font: { size: 10 } } },
-                y: { title: { display: true, text: 'Gauge (mm)' } }
+        // ---- Gauge chart ----
+        const gaugeWrapper = document.createElement('div');
+        gaugeWrapper.className = 'chart-wrapper';
+        const gaugeCanvas = document.createElement('canvas');
+        gaugeWrapper.appendChild(gaugeCanvas);
+        gaugeContainer.appendChild(segmentTitle.cloneNode(true));
+        gaugeContainer.appendChild(gaugeWrapper);
+
+        const gaugeDatasets = [
+            {
+                label: 'Gauge (mm)',
+                data: rows.map(r => r.gauge),
+                borderColor: '#4a6cf7',
+                backgroundColor: 'rgba(74,108,247,0.1)',
+                fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.3
             }
-        }
-    });
+        ];
 
-    // ---- Twist chart ----
-    const twist1Data = parsedData.map(r => r.twist1);
-    const twistCtx = document.getElementById('twistChart').getContext('2d');
-    if (twistChartInstance) twistChartInstance.destroy();
-
-    const twistDatasets = [
-        {
-            label: 'Twist 1 - 3m (mm)',
-            data: twist1Data,
-            borderColor: '#e67e22', backgroundColor: 'rgba(230,126,34,0.1)',
-            fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.3, spanGaps: false
-        },
-        {
-            label: 'Zero',
-            data: Array(n).fill(0),
-            borderColor: '#aaa', borderWidth: 1, borderDash: [3, 3], pointRadius: 0, fill: false
-        }
-    ];
-
-    const twistThresholds = getTwistChartThresholds(lineSpeed);
-    twistThresholds.forEach(t => {
-        // Positive line (shown in legend)
-        twistDatasets.push({
-            label: '+' + t.label,
-            data: Array(n).fill(t.value),
-            borderColor: t.color, borderWidth: t.width, borderDash: t.dash,
-            pointRadius: 0, fill: false
+        const gaugeThresholds = getGaugeChartThresholds(lineSpeed);
+        gaugeThresholds.forEach(t => {
+            gaugeDatasets.push({
+                label: t.label,
+                data: Array(n).fill(t.value),
+                borderColor: t.color, borderWidth: t.width, borderDash: t.dash,
+                pointRadius: 0, fill: false
+            });
         });
-        // Negative mirror (hidden from legend)
-        twistDatasets.push({
-            label: '-' + t.label,
-            data: Array(n).fill(-t.value),
-            borderColor: t.color, borderWidth: t.width, borderDash: t.dash,
-            pointRadius: 0, fill: false
-        });
-    });
 
-    twistChartInstance = new Chart(twistCtx, {
-        type: 'line',
-        data: { labels: displayLabels, datasets: twistDatasets },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: {
-                    position: 'top',
-                    labels: {
-                        usePointStyle: true, padding: 12, font: { size: 10 },
-                        filter: (item) => !item.text.startsWith('-')
-                    }
+        const gaugeChart = new Chart(gaugeCanvas.getContext('2d'), {
+            type: 'line',
+            data: { labels: displayLabels, datasets: gaugeDatasets },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'top', labels: { usePointStyle: true, padding: 12, font: { size: 10 } } },
+                    tooltip: { callbacks: { title: (items) => labels[items[0].dataIndex] } }
                 },
-                tooltip: { callbacks: { title: (items) => labels[items[0].dataIndex] } }
-            },
-            scales: {
-                x: { ticks: { maxRotation: 45, font: { size: 10 } } },
-                y: { title: { display: true, text: 'Twist (mm)' } }
+                scales: {
+                    x: { ticks: { maxRotation: 45, font: { size: 10 } } },
+                    y: { title: { display: true, text: 'Gauge (mm)' } }
+                }
             }
-        }
+        });
+        gaugeChartInstances.push(gaugeChart);
+
+        // ---- Twist chart ----
+        const twistWrapper = document.createElement('div');
+        twistWrapper.className = 'chart-wrapper';
+        const twistCanvas = document.createElement('canvas');
+        twistWrapper.appendChild(twistCanvas);
+        twistContainer.appendChild(segmentTitle.cloneNode(true));
+        twistContainer.appendChild(twistWrapper);
+
+        const twistDatasets = [
+            {
+                label: 'Twist 1 - 3m (mm)',
+                data: rows.map(r => r.twist1),
+                borderColor: '#e67e22', backgroundColor: 'rgba(230,126,34,0.1)',
+                fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.3, spanGaps: false
+            },
+            {
+                label: 'Zero',
+                data: Array(n).fill(0),
+                borderColor: '#aaa', borderWidth: 1, borderDash: [3, 3], pointRadius: 0, fill: false
+            }
+        ];
+
+        const twistThresholds = getTwistChartThresholds(lineSpeed);
+        twistThresholds.forEach(t => {
+            // Positive line (shown in legend)
+            twistDatasets.push({
+                label: '+' + t.label,
+                data: Array(n).fill(t.value),
+                borderColor: t.color, borderWidth: t.width, borderDash: t.dash,
+                pointRadius: 0, fill: false
+            });
+            // Negative mirror (hidden from legend)
+            twistDatasets.push({
+                label: '-' + t.label,
+                data: Array(n).fill(-t.value),
+                borderColor: t.color, borderWidth: t.width, borderDash: t.dash,
+                pointRadius: 0, fill: false
+            });
+        });
+
+        const twistChart = new Chart(twistCanvas.getContext('2d'), {
+            type: 'line',
+            data: { labels: displayLabels, datasets: twistDatasets },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            usePointStyle: true, padding: 12, font: { size: 10 },
+                            filter: (item) => !item.text.startsWith('-')
+                        }
+                    },
+                    tooltip: { callbacks: { title: (items) => labels[items[0].dataIndex] } }
+                },
+                scales: {
+                    x: { ticks: { maxRotation: 45, font: { size: 10 } } },
+                    y: { title: { display: true, text: 'Twist (mm)' } }
+                }
+            }
+        });
+        twistChartInstances.push(twistChart);
     });
 }
 
@@ -1870,9 +1999,14 @@ function buildSchematic() {
 
     // Canvas sizing
     const w = Math.max(container.clientWidth - 20, 600);
-    canvas.width = w;
-    canvas.height = 120;
-    const padL = 60, padR = 20, trackY = 50, trackH = 8;
+    const h = 160;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const padL = 60, padR = 20, trackY = 60, trackH = 10;
     const drawW = w - padL - padR;
 
     function posToX(miles, yards) {
@@ -1880,7 +2014,7 @@ function buildSchematic() {
     }
 
     // Clear
-    ctx.clearRect(0, 0, w, 120);
+    ctx.clearRect(0, 0, w, h);
 
     // Draw track baseline
     ctx.fillStyle = '#ddd';
@@ -1947,7 +2081,7 @@ function buildSchematic() {
     // Legend
     ctx.textAlign = 'left';
     let lx = padL;
-    const ly = 108;
+    const ly = h - 12;
     [['IAL', '#c0392b'], ['IL', '#e67e22'], ['AL', '#28a745']].forEach(([label, col]) => {
         ctx.fillStyle = col;
         ctx.fillRect(lx, ly - 8, 12, 10);
@@ -2373,16 +2507,27 @@ function exportPDF() {
     });
 
     // Add chart images
-    const gaugeCanvas = document.getElementById('gaugeChart');
-    const twistCanvas = document.getElementById('twistChart');
-    const gaugeImg = gaugeCanvas.toDataURL('image/png');
-    const twistImg = twistCanvas.toDataURL('image/png');
-
-    const chartY = doc.lastAutoTable.finalY + 8;
+    const gaugeCanvases = Array.from(document.querySelectorAll('#gaugeCharts canvas'));
+    const twistCanvases = Array.from(document.querySelectorAll('#twistCharts canvas'));
     const chartW = pageWidth - 28;
     const chartH = 70;
-    doc.addImage(gaugeImg, 'PNG', 14, chartY, chartW, chartH);
-    doc.addImage(twistImg, 'PNG', 14, chartY + chartH + 6, chartW, chartH);
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let chartY = doc.lastAutoTable.finalY + 8;
+
+    const maxSegments = Math.max(gaugeCanvases.length, twistCanvases.length);
+    for (let i = 0; i < maxSegments; i++) {
+        const gaugeCanvas = gaugeCanvases[i];
+        const twistCanvas = twistCanvases[i];
+        if (!gaugeCanvas || !twistCanvas) continue;
+        const blockHeight = chartH * 2 + 10;
+        if (chartY + blockHeight > pageHeight - 10) {
+            doc.addPage();
+            chartY = 20;
+        }
+        doc.addImage(gaugeCanvas.toDataURL('image/png'), 'PNG', 14, chartY, chartW, chartH);
+        doc.addImage(twistCanvas.toDataURL('image/png'), 'PNG', 14, chartY + chartH + 6, chartW, chartH);
+        chartY += blockHeight;
+    }
 
     // Page 2: Gauge Faults
     doc.addPage();
