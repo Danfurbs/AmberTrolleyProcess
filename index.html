@@ -402,6 +402,7 @@
         <div class="card">
             <h3>Survey Information</h3>
             <div class="meta-grid" id="metaGrid"></div>
+            <div class="note-box" id="flipNotice" style="display:none;"></div>
         </div>
 
         <div class="summary-stats" id="summaryStats"></div>
@@ -691,6 +692,8 @@ let metadata = {};
 let gaugeChartInstances = [];
 let twistChartInstances = [];
 let xLevelChartInstances = [];
+let runTraceFlipped = false;
+let runFlipReason = '';
 
 // Dismissed faults: keyed by "gauge-{idx}" or "twist-{idx}", stores {timestamp, comment, inspector}
 let dismissedFaults = {};
@@ -956,6 +959,8 @@ function handleFiles(files) {
                     parsedData: result.data,
                     metadata: result.meta,
                     filename: file.name,
+                    traceFlipped: result.traceFlipped || false,
+                    flipReason: result.flipReason || '',
                     manualGaugeFaults: [],
                     manualTwistFaults: [],
                     dismissedFaults: {},
@@ -1081,7 +1086,30 @@ function parseDataForRun(content) {
         throw new Error('No measurement data rows found. Check file format.');
     }
 
-    return { data: dataRows, meta: meta };
+    const normalized = normalizeRunData(dataRows, meta);
+    return { data: normalized.data, meta: meta, traceFlipped: normalized.flipped, flipReason: normalized.reason };
+}
+
+function normalizeRunData(dataRows, meta) {
+    if (!dataRows.length) return { data: dataRows, flipped: false, reason: '' };
+    const direction = (meta['Direction Of Travel'] || '').toLowerCase();
+    const metaDecrement = direction.includes('decrement');
+    const firstPos = dataRows[0].miles * 1760 + dataRows[0].yards;
+    const lastPos = dataRows[dataRows.length - 1].miles * 1760 + dataRows[dataRows.length - 1].yards;
+    const isDescending = firstPos > lastPos;
+    if (!metaDecrement && !isDescending) {
+        return { data: dataRows, flipped: false, reason: '' };
+    }
+    const flippedData = dataRows.slice().reverse().map(row => ({
+        ...row,
+        twist1: Number.isFinite(row.twist1) ? -row.twist1 : row.twist1,
+        twist2: Number.isFinite(row.twist2) ? -row.twist2 : row.twist2,
+        xlevel: Number.isFinite(row.xlevel) ? -row.xlevel : row.xlevel
+    }));
+    const reasonParts = [];
+    if (metaDecrement) reasonParts.push('Direction Of Travel: Decrement');
+    if (isDescending && !metaDecrement) reasonParts.push('mileage descending');
+    return { data: flippedData, flipped: true, reason: reasonParts.join('; ') };
 }
 
 function onAllFilesLoaded(errors) {
@@ -1126,6 +1154,8 @@ function switchRun(index) {
     const run = allRuns[index];
     parsedData = run.parsedData;
     metadata = run.metadata;
+    runTraceFlipped = run.traceFlipped || false;
+    runFlipReason = run.flipReason || '';
     manualGaugeFaults = run.manualGaugeFaults;
     manualTwistFaults = run.manualTwistFaults;
     dismissedFaults = run.dismissedFaults || {};
@@ -1150,6 +1180,8 @@ function parseData(content) {
     const result = parseDataForRun(content);
     parsedData = result.data;
     metadata = result.meta;
+    runTraceFlipped = result.traceFlipped || false;
+    runFlipReason = result.flipReason || '';
     identifyFaults();
 }
 
@@ -1331,6 +1363,7 @@ function buildReport() {
     // Metadata
     const metaGrid = document.getElementById('metaGrid');
     metaGrid.innerHTML = '';
+    const flipNotice = document.getElementById('flipNotice');
     const displayKeys = [
         'Operator ID', 'Profile', 'Start Location', 'End Location',
         'Direction Of Travel', 'Job Reference', 'Route ID', 'Track ID',
@@ -1342,6 +1375,16 @@ function buildReport() {
             metaGrid.innerHTML += `<div class="meta-item"><span class="label">${key}</span><span class="value">${metadata[key]}</span></div>`;
         }
     });
+    if (runTraceFlipped) {
+        const isDecrement = runFlipReason.toLowerCase().includes('direction of travel');
+        const reasonText = runFlipReason ? ` (${runFlipReason})` : '';
+        const captureText = isDecrement ? 'captured in Decrement mode' : 'captured with decreasing mileage';
+        flipNotice.textContent = `Note: This run was ${captureText} and has been flipped to display low-to-high mileage${reasonText}. Twist and cant values have been inverted to preserve right/left orientation.`;
+        flipNotice.style.display = 'block';
+    } else {
+        flipNotice.textContent = '';
+        flipNotice.style.display = 'none';
+    }
 
     updateSummaryStats();
     buildCharts();
@@ -1912,6 +1955,8 @@ function goBack() {
     manualGaugeFaults = [];
     manualTwistFaults = [];
     dismissedFaults = {};
+    runTraceFlipped = false;
+    runFlipReason = '';
 }
 
 // ---- Manual Fault Modals ----
@@ -2682,10 +2727,18 @@ function exportPDF() {
     doc.text(`Route: ${route}  |  Track: ${track}  |  ${metadata['Job Reference'] || ''}`, 14, 34);
     doc.text(`${metadata['Start Location'] || ''} to ${metadata['End Location'] || ''}`, 14, 40);
     doc.text(`Date: ${metadata['Start Time'] || ''}`, 14, 46);
+    let summaryStartY = 54;
+    if (runTraceFlipped) {
+        const flipReasonText = runFlipReason ? ` (${runFlipReason})` : '';
+        doc.setFontSize(9);
+        doc.setTextColor(120);
+        doc.text(`Note: Trace flipped to low-to-high mileage${flipReasonText}. Twist and cant signs inverted.`, 14, 52);
+        summaryStartY = 60;
+    }
 
     // Summary table
     doc.autoTable({
-        startY: 54,
+        startY: summaryStartY,
         head: [['Total Points', 'Gauge Faults', 'Twist Faults', 'Min Gauge', 'Max Gauge', 'Max |Twist|']],
         body: [[
             parsedData.length,
@@ -2890,6 +2943,8 @@ function exportPDF() {
             twist1: r.twist1,
             xlevel: r.xlevel
         })),
+        traceFlipped: runTraceFlipped,
+        flipReason: runFlipReason,
         metadata: { 'Route ID': metadata['Route ID'] || '', 'Track ID': metadata['Track ID'] || '' },
         lineSpeed: lineSpeed,
         trackCat: getTrackCat()
