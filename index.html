@@ -397,7 +397,7 @@
             <h3>Fault Location Schematic</h3>
             <p style="margin-bottom:8px;color:#666;font-size:12px;">Linear diagram showing fault positions along the track. Colour indicates severity.</p>
             <div id="schematicContainer" style="overflow-x:auto;padding:8px 4px 0;background:#fafafa;border-radius:8px;border:1px solid #eee;">
-                <canvas id="schematicCanvas" height="180"></canvas>
+                <canvas id="schematicCanvas" height="200"></canvas>
             </div>
         </div>
 
@@ -408,6 +408,10 @@
         <div class="card">
             <h3>Twist over 3m (mm)</h3>
             <div id="twistCharts" class="chart-stack"></div>
+        </div>
+        <div class="card">
+            <h3>X-Level (Cant) (mm)</h3>
+            <div id="xlevelCharts" class="chart-stack"></div>
         </div>
 
         <!-- Previous Run Comparison -->
@@ -673,6 +677,7 @@ let twistFaults = [];
 let metadata = {};
 let gaugeChartInstances = [];
 let twistChartInstances = [];
+let xLevelChartInstances = [];
 
 // Dismissed faults: keyed by "gauge-{idx}" or "twist-{idx}", stores {timestamp, comment, inspector}
 let dismissedFaults = {};
@@ -1053,7 +1058,7 @@ function parseDataForRun(content) {
                 zone: getCell('zone', 7) || getCell('zone', 6) || ''
             };
             if (!isNaN(row.miles) && !isNaN(row.yards) && !isNaN(row.gauge)) {
-                row.location = row.miles + 'mi ' + row.yards.toFixed(1) + 'yds';
+                row.location = row.miles + 'mi ' + row.yards.toFixed(0) + 'yds';
                 dataRows.push(row);
             }
         }
@@ -1149,7 +1154,7 @@ function parseHTMLTable(html) {
 }
 
 function formatLocation(row) {
-    return row.miles + 'mi ' + row.yards.toFixed(1) + 'yds';
+    return row.miles + 'mi ' + row.yards.toFixed(0) + 'yds';
 }
 
 function parseZoneSpeedValue(zoneText) {
@@ -1465,9 +1470,9 @@ function getGaugeChartThresholds(lineSpeed) {
     }
 
     if (lineSpeed >= 105) {
-        lines.push({ value: 1472, label: 'Block Line (1472)', color: '#721c24', dash: [8, 4], width: 2 });
+        lines.push({ value: 1472, label: 'Block Line (1472)', color: '#721c24', dash: [8, 4], width: 2, hidden: true });
     } else if (lineSpeed >= 5) {
-        lines.push({ value: 1478, label: 'Block Line (1478)', color: '#721c24', dash: [8, 4], width: 2 });
+        lines.push({ value: 1478, label: 'Block Line (1478)', color: '#721c24', dash: [8, 4], width: 2, hidden: true });
     }
 
     // Tight gauge thresholds
@@ -1530,13 +1535,17 @@ function buildCharts() {
     const segments = splitDataByYards(parsedData, 440);
     const gaugeContainer = document.getElementById('gaugeCharts');
     const twistContainer = document.getElementById('twistCharts');
+    const xLevelContainer = document.getElementById('xlevelCharts');
 
     gaugeChartInstances.forEach(chart => chart.destroy());
     twistChartInstances.forEach(chart => chart.destroy());
+    xLevelChartInstances.forEach(chart => chart.destroy());
     gaugeChartInstances = [];
     twistChartInstances = [];
+    xLevelChartInstances = [];
     gaugeContainer.innerHTML = '';
     twistContainer.innerHTML = '';
+    xLevelContainer.innerHTML = '';
 
     segments.forEach(segment => {
         const rows = segment.rows;
@@ -1577,7 +1586,7 @@ function buildCharts() {
                 label: t.label,
                 data: Array(n).fill(t.value),
                 borderColor: t.color, borderWidth: t.width, borderDash: t.dash,
-                pointRadius: 0, fill: false
+                pointRadius: 0, fill: false, hidden: !!t.hidden
             });
         });
 
@@ -1662,6 +1671,46 @@ function buildCharts() {
             }
         });
         twistChartInstances.push(twistChart);
+
+        // ---- X-level (Cant) chart ----
+        const xLevelWrapper = document.createElement('div');
+        xLevelWrapper.className = 'chart-wrapper';
+        const xLevelCanvas = document.createElement('canvas');
+        xLevelWrapper.appendChild(xLevelCanvas);
+        xLevelContainer.appendChild(segmentTitle.cloneNode(true));
+        xLevelContainer.appendChild(xLevelWrapper);
+
+        const xLevelDatasets = [
+            {
+                label: 'Cant (X-Level) (mm)',
+                data: rows.map(r => r.xlevel),
+                borderColor: '#16a085', backgroundColor: 'rgba(22,160,133,0.12)',
+                fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.3, spanGaps: false
+            },
+            {
+                label: 'Zero',
+                data: Array(n).fill(0),
+                borderColor: '#aaa', borderWidth: 1, borderDash: [3, 3], pointRadius: 0, fill: false
+            }
+        ];
+
+        const xLevelChart = new Chart(xLevelCanvas.getContext('2d'), {
+            type: 'line',
+            data: { labels: displayLabels, datasets: xLevelDatasets },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'top', labels: { usePointStyle: true, padding: 12, font: { size: 10 } } },
+                    tooltip: { callbacks: { title: (items) => labels[items[0].dataIndex] } }
+                },
+                scales: {
+                    x: { ticks: { maxRotation: 45, font: { size: 10 } } },
+                    y: { title: { display: true, text: 'Cant (mm)' } }
+                }
+            }
+        });
+        xLevelChartInstances.push(xLevelChart);
     });
 }
 
@@ -1837,8 +1886,8 @@ function saveManualGaugeFault() {
     }
 
     const fault = {
-        startLocation: startMiles + 'mi ' + startYards.toFixed(1) + 'yds',
-        endLocation: endMiles + 'mi ' + endYards.toFixed(1) + 'yds',
+        startLocation: startMiles + 'mi ' + startYards.toFixed(0) + 'yds',
+        endLocation: endMiles + 'mi ' + endYards.toFixed(0) + 'yds',
         startMiles, startYards, endMiles, endYards,
         worstGauge: worstGauge,
         direction: direction,
@@ -1878,8 +1927,8 @@ function saveManualTwistFault() {
     }
 
     const fault = {
-        startLocation: startMiles + 'mi ' + startYards.toFixed(1) + 'yds',
-        endLocation: endMiles + 'mi ' + endYards.toFixed(1) + 'yds',
+        startLocation: startMiles + 'mi ' + startYards.toFixed(0) + 'yds',
+        endLocation: endMiles + 'mi ' + endYards.toFixed(0) + 'yds',
         startMiles, startYards, endMiles, endYards,
         maxAbsTwist: maxTwist,
         worstValue: worstValue,
@@ -1989,49 +2038,45 @@ function isDismissed(faultType, idx) {
 // ---- Linear Schematic ----
 function buildSchematic() {
     const canvas = document.getElementById('schematicCanvas');
-    const ctx = canvas.getContext('2d');
     const container = document.getElementById('schematicContainer');
+    if (!canvas || !container || !parsedData.length) return;
+
+    const ctx = canvas.getContext('2d');
     const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
     const trackCat = getTrackCat();
 
-    // Calculate track extent
-    if (!parsedData || parsedData.length === 0) return;
     const allPoints = parsedData.map(r => r.miles * 1760 + r.yards);
     const minPos = Math.min(...allPoints);
     const maxPos = Math.max(...allPoints);
     const range = maxPos - minPos || 1;
 
-    // Canvas sizing
-    const w = Math.max(container.clientWidth - 20, 700);
-    const h = 190;
+    const availableWidth = Math.max(container.clientWidth - 16, 720);
+    const height = 200;
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    canvas.style.width = w + 'px';
-    canvas.style.height = h + 'px';
+    canvas.width = Math.round(availableWidth * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.width = `${availableWidth}px`;
+    canvas.style.height = `${height}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const padL = 70, padR = 30, trackY = 72, trackH = 12;
-    const drawW = w - padL - padR;
 
-    function posToX(miles, yards) {
-        return padL + ((miles * 1760 + yards - minPos) / range) * drawW;
-    }
+    const padL = 80;
+    const padR = 30;
+    const trackY = 85;
+    const trackH = 12;
+    const drawW = availableWidth - padL - padR;
 
-    // Clear
-    ctx.clearRect(0, 0, w, h);
+    const posToX = (miles, yards) => padL + ((miles * 1760 + yards - minPos) / range) * drawW;
 
-    // Background panel
+    ctx.clearRect(0, 0, availableWidth, height);
     ctx.fillStyle = '#fafafa';
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillRect(0, 0, availableWidth, height);
 
-    // Draw track baseline
     ctx.fillStyle = '#e3e6eb';
     ctx.fillRect(padL, trackY - 1, drawW, trackH);
     ctx.strokeStyle = '#9aa3ad';
     ctx.lineWidth = 1.2;
     ctx.strokeRect(padL, trackY - 1, drawW, trackH);
 
-    // Tick marks
     const startMiles = parsedData[0].miles;
     const endMiles = parsedData[parsedData.length - 1].miles;
     ctx.fillStyle = '#666';
@@ -2045,23 +2090,19 @@ function buildSchematic() {
             ctx.lineTo(x, trackY + trackH + 6);
             ctx.strokeStyle = '#999';
             ctx.stroke();
-            ctx.fillText(m + 'mi', x, trackY + trackH + 16);
+            ctx.fillText(`${m}mi`, x, trackY + trackH + 18);
         }
     }
 
-    // Start/end labels
     ctx.textAlign = 'left';
     ctx.fillStyle = '#555';
     ctx.font = '10px sans-serif';
-    ctx.fillText(parsedData[0].miles + 'mi ' + parsedData[0].yards.toFixed(1) + 'yds', padL, trackY - 18);
+    ctx.fillText(formatLocation(parsedData[0]), padL, trackY - 18);
     ctx.textAlign = 'right';
-    const lastPoint = parsedData[parsedData.length - 1];
-    ctx.fillText(lastPoint.miles + 'mi ' + lastPoint.yards.toFixed(1) + 'yds', padL + drawW, trackY - 18);
+    ctx.fillText(formatLocation(parsedData[parsedData.length - 1]), padL + drawW, trackY - 18);
 
-    // Colour map for categories
     const catColours = { 'IAL': '#c0392b', 'IL': '#e67e22', 'AL': '#28a745' };
 
-    // Draw gauge faults (above track)
     const allGF = gaugeFaults.concat(manualGaugeFaults);
     allGF.forEach((f, i) => {
         if (isDismissed('gauge', i)) return;
@@ -2071,10 +2112,9 @@ function buildSchematic() {
         const x2 = posToX(f.endMiles || f.startMiles, f.endYards || f.startYards);
         const faultW = Math.max(x2 - x1, 3);
         ctx.fillStyle = catColours[c.category] || '#999';
-        ctx.fillRect(x1, trackY - 20, faultW, 14);
+        ctx.fillRect(x1, trackY - 22, faultW, 14);
     });
 
-    // Draw twist faults (below track)
     const allTF = twistFaults.concat(manualTwistFaults);
     allTF.forEach((f, i) => {
         if (isDismissed('twist', i)) return;
@@ -2085,20 +2125,18 @@ function buildSchematic() {
         const x2 = posToX(f.endMiles || f.startMiles, f.endYards || f.startYards);
         const faultW = Math.max(x2 - x1, 3);
         ctx.fillStyle = catColours[c.category] || '#999';
-        ctx.fillRect(x1, trackY + trackH + 4, faultW, 14);
+        ctx.fillRect(x1, trackY + trackH + 6, faultW, 14);
     });
 
-    // Labels
     ctx.fillStyle = '#333';
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillText('Gauge', padL - 10, trackY - 8);
-    ctx.fillText('Twist', padL - 10, trackY + trackH + 18);
+    ctx.fillText('Gauge', padL - 12, trackY - 10);
+    ctx.fillText('Twist', padL - 12, trackY + trackH + 20);
 
-    // Legend
     ctx.textAlign = 'left';
     let lx = padL;
-    const ly = h - 14;
+    const ly = height - 14;
     [['IAL', '#c0392b'], ['IL', '#e67e22'], ['AL', '#28a745']].forEach(([label, col]) => {
         ctx.fillStyle = col;
         ctx.fillRect(lx, ly - 9, 12, 10);
@@ -2107,19 +2145,17 @@ function buildSchematic() {
         ctx.fillText(label, lx + 15, ly);
         lx += 50;
     });
-    // Previous run faults if loaded
+
     if (previousRunData) {
         ctx.fillStyle = 'rgba(0,0,0,0.2)';
         ctx.fillRect(lx, ly - 8, 12, 10);
         ctx.strokeStyle = '#333';
-        ctx.setLineDash([2,2]);
+        ctx.setLineDash([2, 2]);
         ctx.strokeRect(lx, ly - 8, 12, 10);
         ctx.setLineDash([]);
         ctx.fillStyle = '#333';
         ctx.fillText('Previous', lx + 15, ly);
-        lx += 65;
 
-        // Draw previous run faults as dashed outlines
         (previousRunData.gaugeFaults || []).forEach(f => {
             if (f.startMiles === undefined) return;
             const x1 = posToX(f.startMiles, f.startYards);
@@ -2128,7 +2164,7 @@ function buildSchematic() {
             ctx.strokeStyle = '#666';
             ctx.lineWidth = 1.5;
             ctx.setLineDash([3, 2]);
-            ctx.strokeRect(x1, trackY - 20, faultW, 14);
+            ctx.strokeRect(x1, trackY - 22, faultW, 14);
             ctx.setLineDash([]);
         });
         (previousRunData.twistFaults || []).forEach(f => {
@@ -2139,7 +2175,7 @@ function buildSchematic() {
             ctx.strokeStyle = '#666';
             ctx.lineWidth = 1.5;
             ctx.setLineDash([3, 2]);
-            ctx.strokeRect(x1, trackY + trackH + 4, faultW, 14);
+            ctx.strokeRect(x1, trackY + trackH + 6, faultW, 14);
             ctx.setLineDash([]);
         });
     }
@@ -2234,9 +2270,9 @@ async function parsePreviousRunFromText(pdf) {
     for (let i = 0; i + 1 < gaugeLocs.length; i += 2) {
         result.gaugeFaults.push({
             startMiles: gaugeLocs[i].miles, startYards: gaugeLocs[i].yards,
-            startLocation: gaugeLocs[i].miles + 'mi ' + gaugeLocs[i].yards.toFixed(1) + 'yds',
+            startLocation: gaugeLocs[i].miles + 'mi ' + gaugeLocs[i].yards.toFixed(0) + 'yds',
             endMiles: gaugeLocs[i+1].miles, endYards: gaugeLocs[i+1].yards,
-            endLocation: gaugeLocs[i+1].miles + 'mi ' + gaugeLocs[i+1].yards.toFixed(1) + 'yds'
+            endLocation: gaugeLocs[i+1].miles + 'mi ' + gaugeLocs[i+1].yards.toFixed(0) + 'yds'
         });
     }
 
@@ -2249,9 +2285,9 @@ async function parsePreviousRunFromText(pdf) {
     for (let i = 0; i + 1 < twistLocs.length; i += 2) {
         result.twistFaults.push({
             startMiles: twistLocs[i].miles, startYards: twistLocs[i].yards,
-            startLocation: twistLocs[i].miles + 'mi ' + twistLocs[i].yards.toFixed(1) + 'yds',
+            startLocation: twistLocs[i].miles + 'mi ' + twistLocs[i].yards.toFixed(0) + 'yds',
             endMiles: twistLocs[i+1].miles, endYards: twistLocs[i+1].yards,
-            endLocation: twistLocs[i+1].miles + 'mi ' + twistLocs[i+1].yards.toFixed(1) + 'yds'
+            endLocation: twistLocs[i+1].miles + 'mi ' + twistLocs[i+1].yards.toFixed(0) + 'yds'
         });
     }
 
