@@ -968,17 +968,21 @@ function buildHeaderMap(cells) {
     const map = {};
     cells.forEach((cell, idx) => {
         const label = normalizeHeaderLabel(cell);
-        if (label === 'miles') map.miles = idx;
-        if (label === 'yards') map.yards = idx;
-        if (label.startsWith('gauge') && label.includes('mm')) map.gauge = idx;
-        if (label.startsWith('gauge delta')) map.gaugeDelta = idx;
-        if (label.startsWith('x-level')) map.xlevel = idx;
-        if (label.startsWith('twist 1')) map.twist1 = idx;
-        if (label.startsWith('twist 2')) map.twist2 = idx;
-        if (label.startsWith('gps')) map.gps = idx;
-        if (label.includes('zone reference')) map.zone = idx;
-        if (label.includes('default zones')) map.zone = idx;
-        if (label === 'zone' || label.startsWith('zone ')) map.zone = idx;
+        if (label === 'miles' && map.miles === undefined) map.miles = idx;
+        if (label === 'yards' && map.yards === undefined) map.yards = idx;
+        if ((label.includes('gauge delta') || (label.startsWith('gauge') && label.includes('delta'))) && map.gaugeDelta === undefined) {
+            map.gaugeDelta = idx;
+        }
+        if (label.startsWith('gauge') && !label.includes('delta') && !label.includes('x-level') && map.gauge === undefined) {
+            map.gauge = idx;
+        }
+        if (label.startsWith('x-level') && map.xlevel === undefined) map.xlevel = idx;
+        if (label.startsWith('twist 1') && map.twist1 === undefined) map.twist1 = idx;
+        if (label.startsWith('twist 2') && map.twist2 === undefined) map.twist2 = idx;
+        if (label.startsWith('gps') && map.gps === undefined) map.gps = idx;
+        if ((label.includes('zone reference') || label.includes('default zones') || label === 'zone' || label.startsWith('zone ')) && map.zone === undefined) {
+            map.zone = idx;
+        }
     });
     return map;
 }
@@ -1995,14 +1999,14 @@ function buildSchematic() {
 
     // Canvas sizing
     const w = Math.max(container.clientWidth - 20, 600);
-    const h = 120;
+    const h = 160;
     const dpr = window.devicePixelRatio || 1;
     canvas.width = w * dpr;
     canvas.height = h * dpr;
     canvas.style.width = w + 'px';
     canvas.style.height = h + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const padL = 60, padR = 20, trackY = 50, trackH = 8;
+    const padL = 60, padR = 20, trackY = 60, trackH = 10;
     const drawW = w - padL - padR;
 
     function posToX(miles, yards) {
@@ -2077,7 +2081,7 @@ function buildSchematic() {
     // Legend
     ctx.textAlign = 'left';
     let lx = padL;
-    const ly = 108;
+    const ly = h - 12;
     [['IAL', '#c0392b'], ['IL', '#e67e22'], ['AL', '#28a745']].forEach(([label, col]) => {
         ctx.fillStyle = col;
         ctx.fillRect(lx, ly - 8, 12, 10);
