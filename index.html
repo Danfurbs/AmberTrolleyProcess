@@ -239,6 +239,12 @@
         }
         .btn-restore-fault:hover { background: #28a745; color: #fff; }
 
+        .btn-edit-fault {
+            padding: 2px 8px; border: 1px solid #4a6cf7; background: #fff; color: #4a6cf7;
+            border-radius: 3px; cursor: pointer; font-size: 10px; font-weight: 600;
+        }
+        .btn-edit-fault:hover { background: #4a6cf7; color: #fff; }
+
         tr.dismissed-fault td { text-decoration: line-through; color: #999; }
         tr.dismissed-fault { opacity: 0.65; }
         .dismissed-info {
@@ -258,11 +264,11 @@
         .modal h3 { font-size: 18px; color: #1a1a2e; margin-bottom: 20px; }
         .modal-field { margin-bottom: 14px; }
         .modal-field label { display: block; font-size: 12px; color: #888; font-weight: 600; text-transform: uppercase; margin-bottom: 4px; }
-        .modal-field input, .modal-field select {
+        .modal-field input, .modal-field select, .modal-field textarea {
             width: 100%; padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px;
             font-size: 14px; font-family: inherit;
         }
-        .modal-field input:focus, .modal-field select:focus { outline: none; border-color: #4a6cf7; }
+        .modal-field input:focus, .modal-field select:focus, .modal-field textarea:focus { outline: none; border-color: #4a6cf7; }
         .modal-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
         .modal-actions button {
@@ -395,6 +401,7 @@
         <button class="tab active" data-page="overview">Overview &amp; Graphs</button>
         <button class="tab" data-page="gaugeFaults">Gauge Faults</button>
         <button class="tab" data-page="twistFaults">Twist Faults</button>
+        <button class="tab" data-page="gaugeVariationFaults">Gauge Variation Faults</button>
     </div>
 
     <!-- Page 1: Overview & Graphs -->
@@ -426,6 +433,10 @@
         <div class="card">
             <h3>X-Level (Cant) (mm)</h3>
             <div id="xlevelCharts" class="chart-stack"></div>
+        </div>
+        <div class="card">
+            <h3>Gauge Variation (Gauge Delta over 3m) (mm)</h3>
+            <div id="gaugeVariationCharts" class="chart-stack"></div>
         </div>
 
         <!-- Previous Run Comparison -->
@@ -555,6 +566,37 @@
             </div>
         </div>
     </div>
+
+    <!-- Page 4: Gauge Variation Faults -->
+    <div class="page" id="page-gaugeVariationFaults">
+        <div class="card">
+            <h3>Gauge Variation Faults - 3m Base</h3>
+            <p style="margin-bottom: 12px; color: #666; font-size: 13px;">
+                Classified from the Gauge Delta column using static track gauge variation intervention limits.
+                Where Gauge Delta is not present in the source file, this table remains empty.
+            </p>
+            <div style="overflow-x: auto;">
+                <table id="gaugeVariationFaultTable">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Start Location</th>
+                            <th>End Location</th>
+                            <th>Length (yds)</th>
+                            <th>Max |Gauge Delta| (mm)</th>
+                            <th>Worst Value (mm)</th>
+                            <th>Category</th>
+                            <th>Required Action</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="note-box">
+                <strong>Limits used:</strong> 100-125 mph: ±6 (correct within 13 weeks), 65-95 mph: ±7 (within 26 weeks), 5-60 mph: ±8 (within 52 weeks).
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Manual Gauge Fault Modal -->
@@ -659,6 +701,53 @@
     </div>
 </div>
 
+
+<!-- Edit Fault Modal -->
+<div class="modal-overlay" id="editFaultModal">
+    <div class="modal">
+        <h3>Edit Fault Override</h3>
+        <p style="margin-bottom: 16px; color: #666; font-size: 13px;">Override fault mileage and key values for reporting with inspector commentary.</p>
+        <div class="modal-row">
+            <div class="modal-field">
+                <label>Start Miles</label>
+                <input type="number" id="editStartMiles" step="1" min="0">
+            </div>
+            <div class="modal-field">
+                <label>Start Yards</label>
+                <input type="number" id="editStartYards" step="0.1" min="0">
+            </div>
+        </div>
+        <div class="modal-row">
+            <div class="modal-field">
+                <label>End Miles</label>
+                <input type="number" id="editEndMiles" step="1" min="0">
+            </div>
+            <div class="modal-field">
+                <label>End Yards</label>
+                <input type="number" id="editEndYards" step="0.1" min="0">
+            </div>
+        </div>
+        <div class="modal-field">
+            <label id="editPrimaryLabel">Override Value (mm)</label>
+            <input type="number" id="editPrimaryValue" step="0.1">
+        </div>
+        <div class="modal-field">
+            <label>Inspector Name (optional)</label>
+            <input type="text" id="editInspector" placeholder="Enter inspector name...">
+        </div>
+        <div class="modal-field">
+            <label>Commentary (required)</label>
+            <textarea id="editCommentary" rows="3" placeholder="Reason / site observation for override..."></textarea>
+        </div>
+        <input type="hidden" id="editFaultType">
+        <input type="hidden" id="editFaultIdx">
+        <div class="modal-actions">
+            <button class="btn-modal-cancel" onclick="closeModal('editFaultModal')">Cancel</button>
+            <button class="btn-modal-save" onclick="confirmEditFault()">Save Override</button>
+        </div>
+    </div>
+</div>
+
 <!-- Dismiss Fault Modal -->
 <div class="modal-overlay" id="dismissModal">
     <div class="modal">
@@ -688,15 +777,18 @@
 let parsedData = null;
 let gaugeFaults = [];
 let twistFaults = [];
+let gaugeVariationFaults = [];
 let metadata = {};
 let gaugeChartInstances = [];
 let twistChartInstances = [];
 let xLevelChartInstances = [];
+let gaugeVariationChartInstances = [];
 let runTraceFlipped = false;
 let runFlipReason = '';
 
 // Dismissed faults: keyed by "gauge-{idx}" or "twist-{idx}", stores {timestamp, comment, inspector}
 let dismissedFaults = {};
+let faultEdits = {};
 
 // Manual faults (kept separate so we can tag them)
 let manualGaugeFaults = [];
@@ -964,6 +1056,7 @@ function handleFiles(files) {
                     manualGaugeFaults: [],
                     manualTwistFaults: [],
                     dismissedFaults: {},
+                    faultEdits: {},
                     overrides: {
                         enabled: false,
                         gaugeTight: '',
@@ -1073,6 +1166,10 @@ function parseDataForRun(content) {
                     const cell = getCell('twist2', 5);
                     return cell !== '' && cell !== undefined ? parseFloat(cell) : null;
                 })(),
+                gaugeDelta: (() => {
+                    const cell = getCell('gaugeDelta', null);
+                    return cell !== '' && cell !== undefined && cell !== null ? parseFloat(cell) : null;
+                })(),
                 zone: getCell('zone', 7) || getCell('zone', 6) || ''
             };
             if (!isNaN(row.miles) && !isNaN(row.yards) && !isNaN(row.gauge)) {
@@ -1159,6 +1256,7 @@ function switchRun(index) {
     manualGaugeFaults = run.manualGaugeFaults;
     manualTwistFaults = run.manualTwistFaults;
     dismissedFaults = run.dismissedFaults || {};
+    faultEdits = run.faultEdits || {};
     applyOverrideSettings(run.overrides || {});
 
     const derivedSpeed = getLineSpeedFromZones(parsedData);
@@ -1235,6 +1333,26 @@ function identifyFaults() {
     const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
     identifyGaugeFaults(lineSpeed);
     identifyTwistFaults();
+    identifyGaugeVariationFaults(lineSpeed);
+}
+
+function classifyGaugeVariationFault(absDelta, lineSpeed) {
+    if (!lineSpeed || lineSpeed < 5 || !Number.isFinite(absDelta)) return null;
+    if (lineSpeed >= 100 && lineSpeed <= 125 && absDelta >= 6) {
+        return { category: 'IL', badge: 'badge-il', rowClass: 'cat-il', action: 'Correct within 13 weeks', threshold: 6 };
+    }
+    if (lineSpeed >= 65 && lineSpeed <= 95 && absDelta >= 7) {
+        return { category: 'IL', badge: 'badge-il', rowClass: 'cat-il', action: 'Correct within 26 weeks', threshold: 7 };
+    }
+    if (lineSpeed >= 5 && lineSpeed <= 60 && absDelta >= 8) {
+        return { category: 'IL', badge: 'badge-il', rowClass: 'cat-il', action: 'Correct within 52 weeks', threshold: 8 };
+    }
+    return null;
+}
+
+function getGaugeVariationThreshold(lineSpeed) {
+    const classification = classifyGaugeVariationFault(999, lineSpeed);
+    return classification ? classification.threshold : null;
 }
 
 function identifyGaugeFaults(lineSpeed) {
@@ -1353,6 +1471,60 @@ function identifyTwistFaults() {
     }
 }
 
+function identifyGaugeVariationFaults(lineSpeed) {
+    gaugeVariationFaults = [];
+    const threshold = getGaugeVariationThreshold(lineSpeed);
+    if (!threshold) return;
+
+    let inFault = false;
+    let currentFault = null;
+
+    for (let i = 0; i < parsedData.length; i++) {
+        const row = parsedData[i];
+        const delta = Number.isFinite(row.gaugeDelta) ? row.gaugeDelta : null;
+        const isFault = delta !== null && Math.abs(delta) >= threshold;
+
+        if (isFault) {
+            if (!inFault) {
+                currentFault = {
+                    startIdx: i,
+                    startLocation: formatLocation(row),
+                    startMiles: row.miles,
+                    startYards: row.yards,
+                    maxAbsGaugeDelta: Math.abs(delta),
+                    worstGaugeDelta: delta,
+                    rows: [row]
+                };
+                inFault = true;
+            } else {
+                currentFault.rows.push(row);
+                if (Math.abs(delta) > currentFault.maxAbsGaugeDelta) {
+                    currentFault.maxAbsGaugeDelta = Math.abs(delta);
+                    currentFault.worstGaugeDelta = delta;
+                }
+            }
+        } else if (inFault) {
+            const lastRow = currentFault.rows[currentFault.rows.length - 1];
+            currentFault.endLocation = formatLocation(lastRow);
+            currentFault.endMiles = lastRow.miles;
+            currentFault.endYards = lastRow.yards;
+            currentFault.length = (currentFault.endYards - currentFault.startYards).toFixed(1);
+            gaugeVariationFaults.push(currentFault);
+            inFault = false;
+            currentFault = null;
+        }
+    }
+
+    if (inFault) {
+        const lastRow = currentFault.rows[currentFault.rows.length - 1];
+        currentFault.endLocation = formatLocation(lastRow);
+        currentFault.endMiles = lastRow.miles;
+        currentFault.endYards = lastRow.yards;
+        currentFault.length = (currentFault.endYards - currentFault.startYards).toFixed(1);
+        gaugeVariationFaults.push(currentFault);
+    }
+}
+
 // ---- Build Report ----
 function buildReport() {
     const route = metadata['Route ID'] || '';
@@ -1391,6 +1563,7 @@ function buildReport() {
     buildSchematic();
     buildGaugeFaultTable();
     buildTwistFaultTable();
+    buildGaugeVariationFaultTable();
     updateSpeedWarning();
     updateComparison();
 
@@ -1455,6 +1628,7 @@ function onLineSpeedChange() {
     updateSummaryStats();
     buildGaugeFaultTable();
     buildTwistFaultTable();
+    buildGaugeVariationFaultTable();
     buildCharts();
     buildSchematic();
     updateSpeedWarning();
@@ -1477,6 +1651,8 @@ function updateSummaryStats() {
     const maxGauge = Math.max(...parsedData.map(r => r.gauge));
     const twistValues = parsedData.filter(r => r.twist1 !== null).map(r => r.twist1);
     const maxTwist = twistValues.length ? Math.max(...twistValues.map(v => Math.abs(v))) : 0;
+    const gaugeDeltaValues = parsedData.filter(r => Number.isFinite(r.gaugeDelta)).map(r => r.gaugeDelta);
+    const maxGaugeVariation = gaugeDeltaValues.length ? Math.max(...gaugeDeltaValues.map(v => Math.abs(v))) : 0;
 
     const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
     const allGaugeFaults = gaugeFaults.concat(manualGaugeFaults);
@@ -1491,16 +1667,17 @@ function updateSummaryStats() {
 
     const totalGauge = allGaugeFaults.length;
     const totalTwist = allTwistFaults.length;
-    const manualCount = manualGaugeFaults.length + manualTwistFaults.length;
-    const manualNote = manualCount > 0 ? ` (${manualCount} manual)` : '';
+    const totalGaugeVariation = gaugeVariationFaults.length;
 
     statsDiv.innerHTML = `
         <div class="stat-card"><div class="number">${totalPoints}</div><div class="label">Data Points</div></div>
         <div class="stat-card ${totalGauge > 0 ? 'danger' : ''}"><div class="number">${totalGauge}</div><div class="label">Gauge Faults${manualGaugeFaults.length > 0 ? ' (' + manualGaugeFaults.length + ' manual)' : ''}</div></div>
         <div class="stat-card ${totalTwist > 0 ? 'warning' : ''}"><div class="number">${totalTwist}</div><div class="label">Twist Faults${manualTwistFaults.length > 0 ? ' (' + manualTwistFaults.length + ' manual)' : ''}</div></div>
         <div class="stat-card ${ialGauge + ialTwist > 0 ? 'danger' : ''}"><div class="number">${ialGauge + ialTwist}</div><div class="label">IAL Faults</div></div>
+        <div class="stat-card ${totalGaugeVariation > 0 ? 'warning' : ''}"><div class="number">${totalGaugeVariation}</div><div class="label">Gauge Variation Faults</div></div>
         <div class="stat-card"><div class="number">${minGauge.toFixed(1)}</div><div class="label">Min Gauge (mm)</div></div>
         <div class="stat-card"><div class="number">${maxTwist.toFixed(1)}</div><div class="label">Max |Twist| (mm)</div></div>
+        <div class="stat-card"><div class="number">${maxGaugeVariation.toFixed(1)}</div><div class="label">Max |Gauge Delta| (mm)</div></div>
     `;
 }
 
@@ -1609,16 +1786,20 @@ function buildCharts() {
     const gaugeContainer = document.getElementById('gaugeCharts');
     const twistContainer = document.getElementById('twistCharts');
     const xLevelContainer = document.getElementById('xlevelCharts');
+    const gaugeVariationContainer = document.getElementById('gaugeVariationCharts');
 
     gaugeChartInstances.forEach(chart => chart.destroy());
     twistChartInstances.forEach(chart => chart.destroy());
     xLevelChartInstances.forEach(chart => chart.destroy());
+    gaugeVariationChartInstances.forEach(chart => chart.destroy());
     gaugeChartInstances = [];
     twistChartInstances = [];
     xLevelChartInstances = [];
+    gaugeVariationChartInstances = [];
     gaugeContainer.innerHTML = '';
     twistContainer.innerHTML = '';
     xLevelContainer.innerHTML = '';
+    gaugeVariationContainer.innerHTML = '';
 
     segments.forEach(segment => {
         const rows = segment.rows;
@@ -1825,6 +2006,64 @@ function buildCharts() {
             }
         });
         xLevelChartInstances.push(xLevelChart);
+
+        // ---- Gauge variation chart ----
+        const gvWrapper = document.createElement('div');
+        gvWrapper.className = 'chart-wrapper';
+        const gvCanvas = document.createElement('canvas');
+        gvWrapper.appendChild(gvCanvas);
+        gaugeVariationContainer.appendChild(segmentTitle.cloneNode(true));
+        gaugeVariationContainer.appendChild(gvWrapper);
+
+        const gaugeVariationThreshold = getGaugeVariationThreshold(lineSpeed);
+        const gaugeVariationDatasets = [
+            {
+                label: 'Gauge Delta (mm)',
+                data: rows.map(r => Number.isFinite(r.gaugeDelta) ? r.gaugeDelta : null),
+                borderColor: '#8e44ad',
+                backgroundColor: 'rgba(142,68,173,0.12)',
+                fill: true,
+                borderWidth: 1.5,
+                pointRadius: 0,
+                tension: 0.3,
+                spanGaps: false
+            },
+            {
+                label: 'Zero',
+                data: Array(n).fill(0),
+                borderColor: '#aaa', borderWidth: 1, borderDash: [3, 3], pointRadius: 0, fill: false
+            }
+        ];
+        if (gaugeVariationThreshold) {
+            gaugeVariationDatasets.push({
+                label: `+IL (${gaugeVariationThreshold}mm)`,
+                data: Array(n).fill(gaugeVariationThreshold),
+                borderColor: '#e67e22', borderWidth: 1, borderDash: [5, 3], pointRadius: 0, fill: false
+            });
+            gaugeVariationDatasets.push({
+                label: `-IL (${gaugeVariationThreshold}mm)`,
+                data: Array(n).fill(-gaugeVariationThreshold),
+                borderColor: '#e67e22', borderWidth: 1, borderDash: [5, 3], pointRadius: 0, fill: false
+            });
+        }
+
+        const gaugeVariationChart = new Chart(gvCanvas.getContext('2d'), {
+            type: 'line',
+            data: { labels: displayLabels, datasets: gaugeVariationDatasets },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'top', labels: { usePointStyle: true, padding: 12, font: { size: 10 } } },
+                    tooltip: { callbacks: { title: (items) => labels[items[0].dataIndex] } }
+                },
+                scales: {
+                    x: { ticks: { maxRotation: 45, font: { size: 10 } } },
+                    y: { title: { display: true, text: 'Gauge Delta (mm)' } }
+                }
+            }
+        });
+        gaugeVariationChartInstances.push(gaugeVariationChart);
     });
 }
 
@@ -1837,18 +2076,25 @@ function buildGaugeFaultTable() {
         tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:30px;color:#888;">No gauge faults detected</td></tr>';
         return;
     }
+
     allGaugeFaults.forEach((f, idx) => {
+        const effective = getEffectiveFault('gauge', idx, f);
         const dismissed = isDismissed('gauge', idx);
-        const classification = classifyGaugeFault(f.worstGauge, lineSpeed, getTrackCat());
+        const classification = classifyGaugeFault(effective.worstGauge, lineSpeed, getTrackCat());
         const tr = document.createElement('tr');
         tr.className = (classification ? classification.rowClass : '') + (dismissed ? ' dismissed-fault' : '');
+
         const catBadge = classification
             ? `<span class="badge ${classification.badge}">${classification.category}</span>`
             : '<span style="color:#999;">--</span>';
-        const faultType = classification ? classification.type : (f.direction === 'wide' ? 'Wide Gauge' : 'Tight Gauge');
+        const faultType = classification ? classification.type : (effective.direction === 'wide' ? 'Wide Gauge' : 'Tight Gauge');
         const actionText = classification ? classification.action : (lineSpeed < 5 ? 'Set line speed' : 'Below threshold');
         const manualTag = f.manual ? '<span class="manual-fault-tag">MANUAL</span>' : '';
         const removeBtn = f.manual && !dismissed ? `<button class="btn-remove-fault" onclick="removeManualGaugeFault(${idx - gaugeFaults.length})" title="Remove manual fault">X</button> ` : '';
+        const editBtn = `<button class="btn-edit-fault" onclick="openEditFaultModal('gauge',${idx})">Edit</button>`;
+        const editInfo = effective.edit
+            ? `<span class="dismissed-info">Override by ${effective.edit.inspector}: ${effective.edit.commentary}</span>`
+            : '';
         const defaultFaultNo = f.manual && f.faultNo ? f.faultNo : '';
 
         let dismissBtn;
@@ -1863,20 +2109,19 @@ function buildGaugeFaultTable() {
         tr.innerHTML = `
             <td>${idx + 1} ${manualTag}</td>
             <td><input type="text" class="fault-no-input" data-type="gauge" data-idx="${idx}" placeholder="--" value="${defaultFaultNo}" style="width:55px;padding:3px 5px;border:1px solid #ccc;border-radius:4px;font-size:11px;text-align:center;"></td>
-            <td>${f.startLocation}</td>
-            <td>${f.endLocation}</td>
-            <td>${f.length}</td>
-            <td>${f.worstGauge.toFixed(1)}</td>
-            <td>${f.deviation}</td>
+            <td>${effective.startLocation}</td>
+            <td>${effective.endLocation}</td>
+            <td>${effective.length}</td>
+            <td>${effective.worstGauge.toFixed(1)}</td>
+            <td>${effective.deviation}</td>
             <td>${faultType}</td>
             <td>${catBadge}</td>
-            <td style="font-size:11px;max-width:220px;">${actionText} ${removeBtn}${dismissBtn}${dismissInfo}</td>
+            <td style="font-size:11px;max-width:220px;">${actionText} ${editBtn} ${removeBtn}${dismissBtn}${dismissInfo}${editInfo}</td>
             <td style="text-align:center;"><input type="checkbox" class="repeat-fault-cb" data-type="gauge" data-idx="${idx}"></td>
         `;
         tbody.appendChild(tr);
     });
 }
-
 function buildTwistFaultTable() {
     const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
     const tbody = document.querySelector('#twistFaultTable tbody');
@@ -1886,18 +2131,25 @@ function buildTwistFaultTable() {
         tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:30px;color:#888;">No twist faults detected</td></tr>';
         return;
     }
+
     allTwistFaults.forEach((f, idx) => {
+        const effective = getEffectiveFault('twist', idx, f);
         const dismissed = isDismissed('twist', idx);
         const isLessThan400 = f.manual ? f.curveRadiusLessThan400 : twistFaultRadiusSettings[idx];
-        const classification = classifyTwistFault(f.maxAbsTwist, lineSpeed, isLessThan400);
+        const classification = classifyTwistFault(effective.maxAbsTwist, lineSpeed, isLessThan400);
         const tr = document.createElement('tr');
         tr.className = (classification ? classification.rowClass : '') + (dismissed ? ' dismissed-fault' : '');
+
         const catBadge = classification
             ? `<span class="badge ${classification.badge}">${classification.category}</span>`
             : '<span style="color:#999;">--</span>';
         const actionText = classification ? classification.action : (lineSpeed < 5 ? 'Set line speed' : 'Below threshold');
         const manualTag = f.manual ? '<span class="manual-fault-tag">MANUAL</span>' : '';
         const removeBtn = f.manual && !dismissed ? `<button class="btn-remove-fault" onclick="removeManualTwistFault(${idx - twistFaults.length})" title="Remove manual fault">X</button> ` : '';
+        const editBtn = `<button class="btn-edit-fault" onclick="openEditFaultModal('twist',${idx})">Edit</button>`;
+        const editInfo = effective.edit
+            ? `<span class="dismissed-info">Override by ${effective.edit.inspector}: ${effective.edit.commentary}</span>`
+            : '';
         const defaultFaultNo = f.manual && f.faultNo ? f.faultNo : '';
 
         let dismissBtn;
@@ -1912,11 +2164,11 @@ function buildTwistFaultTable() {
         tr.innerHTML = `
             <td>${idx + 1} ${manualTag}</td>
             <td><input type="text" class="fault-no-input" data-type="twist" data-idx="${idx}" placeholder="--" value="${defaultFaultNo}" style="width:55px;padding:3px 5px;border:1px solid #ccc;border-radius:4px;font-size:11px;text-align:center;"></td>
-            <td>${f.startLocation}</td>
-            <td>${f.endLocation}</td>
-            <td>${f.length}</td>
-            <td>${f.maxAbsTwist.toFixed(1)}</td>
-            <td>${f.worstValue.toFixed(1)}</td>
+            <td>${effective.startLocation}</td>
+            <td>${effective.endLocation}</td>
+            <td>${effective.length}</td>
+            <td>${effective.maxAbsTwist.toFixed(1)}</td>
+            <td>${effective.worstValue.toFixed(1)}</td>
             <td>
                 <select class="radius-select" data-twist-idx="${idx}" onchange="onRadiusChange(this)">
                     <option value="gte400" ${!isLessThan400 ? 'selected' : ''}>&ge; 400m</option>
@@ -1924,13 +2176,12 @@ function buildTwistFaultTable() {
                 </select>
             </td>
             <td>${catBadge}</td>
-            <td style="font-size:11px;max-width:220px;">${actionText} ${removeBtn}${dismissBtn}${dismissInfo}</td>
+            <td style="font-size:11px;max-width:220px;">${actionText} ${editBtn} ${removeBtn}${dismissBtn}${dismissInfo}${editInfo}</td>
             <td style="text-align:center;"><input type="checkbox" class="repeat-fault-cb" data-type="twist" data-idx="${idx}"></td>
         `;
         tbody.appendChild(tr);
     });
 }
-
 function onRadiusChange(selectEl) {
     const idx = parseInt(selectEl.dataset.twistIdx);
     const isManual = idx >= twistFaults.length;
@@ -1955,11 +2206,53 @@ function goBack() {
     manualGaugeFaults = [];
     manualTwistFaults = [];
     dismissedFaults = {};
+    faultEdits = {};
     runTraceFlipped = false;
     runFlipReason = '';
 }
 
 // ---- Manual Fault Modals ----
+
+function buildGaugeVariationFaultTable() {
+    const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
+    const tbody = document.querySelector('#gaugeVariationFaultTable tbody');
+    tbody.innerHTML = '';
+
+    if (!gaugeVariationFaults.length) {
+        const hasGaugeDelta = parsedData && parsedData.some(r => Number.isFinite(r.gaugeDelta));
+        const emptyText = hasGaugeDelta
+            ? 'No gauge variation faults detected'
+            : 'Gauge Delta column not found in this run';
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:30px;color:#888;">${emptyText}</td></tr>`;
+        return;
+    }
+
+    gaugeVariationFaults.forEach((f, idx) => {
+        const effective = getEffectiveFault('gaugeVariation', idx, f);
+        const classification = classifyGaugeVariationFault(effective.maxAbsGaugeDelta, lineSpeed);
+        const tr = document.createElement('tr');
+        tr.className = classification ? classification.rowClass : '';
+        const catBadge = classification
+            ? `<span class="badge ${classification.badge}">${classification.category}</span>`
+            : '<span style="color:#999;">--</span>';
+        const actionText = classification ? classification.action : (lineSpeed < 5 ? 'Set line speed' : 'Below threshold');
+        const editBtn = `<button class="btn-edit-fault" onclick="openEditFaultModal('gaugeVariation',${idx})">Edit</button>`;
+        const editInfo = effective.edit
+            ? `<span class="dismissed-info">Override by ${effective.edit.inspector}: ${effective.edit.commentary}</span>`
+            : '';
+        tr.innerHTML = `
+            <td>${idx + 1}</td>
+            <td>${effective.startLocation}</td>
+            <td>${effective.endLocation}</td>
+            <td>${effective.length}</td>
+            <td>${effective.maxAbsGaugeDelta.toFixed(1)}</td>
+            <td>${effective.worstGaugeDelta.toFixed(1)}</td>
+            <td>${catBadge}</td>
+            <td style="font-size:11px;max-width:220px;">${actionText} ${editBtn}${editInfo}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
 function openManualGaugeFaultModal() {
     document.getElementById('mgStartMiles').value = '';
     document.getElementById('mgStartYards').value = '';
@@ -2151,6 +2444,135 @@ function isDismissed(faultType, idx) {
     return dismissedFaults[faultType + '-' + idx] || null;
 }
 
+
+function getFaultEdit(faultType, idx) {
+    return faultEdits[faultType + '-' + idx] || null;
+}
+
+function formatFaultLocation(miles, yards) {
+    if (!Number.isFinite(miles) || !Number.isFinite(yards)) return '--';
+    return miles + 'mi ' + yards.toFixed(0) + 'yds';
+}
+
+function getEffectiveFault(faultType, idx, fault) {
+    const edit = getFaultEdit(faultType, idx);
+    if (!edit) return { ...fault, edit: null };
+
+    const startMiles = Number.isFinite(edit.startMiles) ? edit.startMiles : fault.startMiles;
+    const startYards = Number.isFinite(edit.startYards) ? edit.startYards : fault.startYards;
+    const endMiles = Number.isFinite(edit.endMiles) ? edit.endMiles : fault.endMiles;
+    const endYards = Number.isFinite(edit.endYards) ? edit.endYards : fault.endYards;
+
+    const out = {
+        ...fault,
+        startMiles,
+        startYards,
+        endMiles,
+        endYards,
+        startLocation: formatFaultLocation(startMiles, startYards),
+        endLocation: formatFaultLocation(endMiles, endYards),
+        edit
+    };
+
+    if (faultType === 'gauge') {
+        if (Number.isFinite(edit.primaryValue)) {
+            out.worstGauge = edit.primaryValue;
+            out.deviation = (out.worstGauge >= 1435 ? '+' : '-') + Math.abs(out.worstGauge - 1435).toFixed(1);
+            if (!out.manual) out.direction = out.worstGauge >= 1435 ? 'wide' : 'tight';
+        }
+    } else if (faultType === 'twist') {
+        if (Number.isFinite(edit.primaryValue)) {
+            out.worstValue = edit.primaryValue;
+            out.maxAbsTwist = Math.abs(edit.primaryValue);
+        }
+    } else if (faultType === 'gaugeVariation') {
+        if (Number.isFinite(edit.primaryValue)) {
+            out.worstGaugeDelta = edit.primaryValue;
+            out.maxAbsGaugeDelta = Math.abs(edit.primaryValue);
+        }
+    }
+
+    const startPos = Number.isFinite(startMiles) && Number.isFinite(startYards) ? startMiles * 1760 + startYards : null;
+    const endPos = Number.isFinite(endMiles) && Number.isFinite(endYards) ? endMiles * 1760 + endYards : null;
+    if (startPos !== null && endPos !== null) {
+        out.length = Math.max(0, endPos - startPos).toFixed(1);
+    }
+
+    return out;
+}
+
+function openEditFaultModal(faultType, idx) {
+    const allGaugeFaults = gaugeFaults.concat(manualGaugeFaults);
+    const allTwistFaults = twistFaults.concat(manualTwistFaults);
+    const sourceFault = faultType === 'gauge'
+        ? allGaugeFaults[idx]
+        : faultType === 'twist'
+            ? allTwistFaults[idx]
+            : gaugeVariationFaults[idx];
+    if (!sourceFault) return;
+
+    const effective = getEffectiveFault(faultType, idx, sourceFault);
+    const edit = getFaultEdit(faultType, idx);
+
+    document.getElementById('editFaultType').value = faultType;
+    document.getElementById('editFaultIdx').value = idx;
+    document.getElementById('editStartMiles').value = Number.isFinite(effective.startMiles) ? effective.startMiles : '';
+    document.getElementById('editStartYards').value = Number.isFinite(effective.startYards) ? effective.startYards : '';
+    document.getElementById('editEndMiles').value = Number.isFinite(effective.endMiles) ? effective.endMiles : '';
+    document.getElementById('editEndYards').value = Number.isFinite(effective.endYards) ? effective.endYards : '';
+
+    const primaryLabel = document.getElementById('editPrimaryLabel');
+    if (faultType === 'gauge') {
+        primaryLabel.textContent = 'Worst Gauge (mm)';
+        document.getElementById('editPrimaryValue').value = Number.isFinite(effective.worstGauge) ? effective.worstGauge : '';
+    } else if (faultType === 'twist') {
+        primaryLabel.textContent = 'Worst Twist Value (mm)';
+        document.getElementById('editPrimaryValue').value = Number.isFinite(effective.worstValue) ? effective.worstValue : '';
+    } else {
+        primaryLabel.textContent = 'Worst Gauge Delta (mm)';
+        document.getElementById('editPrimaryValue').value = Number.isFinite(effective.worstGaugeDelta) ? effective.worstGaugeDelta : '';
+    }
+
+    document.getElementById('editInspector').value = edit ? (edit.inspector || '') : '';
+    document.getElementById('editCommentary').value = edit ? (edit.commentary || '') : '';
+    document.getElementById('editFaultModal').classList.add('active');
+}
+
+function confirmEditFault() {
+    const faultType = document.getElementById('editFaultType').value;
+    const idx = parseInt(document.getElementById('editFaultIdx').value);
+    const commentary = document.getElementById('editCommentary').value.trim();
+    if (!commentary) {
+        alert('Please provide commentary for the override.');
+        return;
+    }
+
+    const entry = {
+        startMiles: parseFloat(document.getElementById('editStartMiles').value),
+        startYards: parseFloat(document.getElementById('editStartYards').value),
+        endMiles: parseFloat(document.getElementById('editEndMiles').value),
+        endYards: parseFloat(document.getElementById('editEndYards').value),
+        primaryValue: parseFloat(document.getElementById('editPrimaryValue').value),
+        inspector: document.getElementById('editInspector').value.trim() || 'Unknown',
+        commentary,
+        updatedAt: new Date().toISOString()
+    };
+
+    const key = faultType + '-' + idx;
+    faultEdits[key] = entry;
+
+    if (activeRunIndex >= 0 && allRuns[activeRunIndex]) {
+        allRuns[activeRunIndex].faultEdits = Object.assign({}, faultEdits);
+    }
+
+    closeModal('editFaultModal');
+    buildGaugeFaultTable();
+    buildTwistFaultTable();
+    buildGaugeVariationFaultTable();
+    updateSummaryStats();
+    buildSchematic();
+}
+
 // ---- Linear Schematic ----
 function buildSchematic() {
     const canvas = document.getElementById('schematicCanvas');
@@ -2222,10 +2644,11 @@ function buildSchematic() {
     const allGF = gaugeFaults.concat(manualGaugeFaults);
     allGF.forEach((f, i) => {
         if (isDismissed('gauge', i)) return;
-        const c = classifyGaugeFault(f.worstGauge, lineSpeed, trackCat);
+        const effective = getEffectiveFault('gauge', i, f);
+        const c = classifyGaugeFault(effective.worstGauge, lineSpeed, trackCat);
         if (!c) return;
-        const x1 = posToX(f.startMiles, f.startYards);
-        const x2 = posToX(f.endMiles || f.startMiles, f.endYards || f.startYards);
+        const x1 = posToX(effective.startMiles, effective.startYards);
+        const x2 = posToX(effective.endMiles || effective.startMiles, effective.endYards || effective.startYards);
         const faultW = Math.max(x2 - x1, 3);
         ctx.fillStyle = catColours[c.category] || '#999';
         ctx.fillRect(x1, trackY - 22, faultW, 14);
@@ -2234,11 +2657,12 @@ function buildSchematic() {
     const allTF = twistFaults.concat(manualTwistFaults);
     allTF.forEach((f, i) => {
         if (isDismissed('twist', i)) return;
+        const effective = getEffectiveFault('twist', i, f);
         const isLt400 = f.manual ? f.curveRadiusLessThan400 : twistFaultRadiusSettings[i];
-        const c = classifyTwistFault(f.maxAbsTwist, lineSpeed, isLt400);
+        const c = classifyTwistFault(effective.maxAbsTwist, lineSpeed, isLt400);
         if (!c) return;
-        const x1 = posToX(f.startMiles, f.startYards);
-        const x2 = posToX(f.endMiles || f.startMiles, f.endYards || f.startYards);
+        const x1 = posToX(effective.startMiles, effective.startYards);
+        const x2 = posToX(effective.endMiles || effective.startMiles, effective.endYards || effective.startYards);
         const faultW = Math.max(x2 - x1, 3);
         ctx.fillStyle = catColours[c.category] || '#999';
         ctx.fillRect(x1, trackY + trackH + 6, faultW, 14);
@@ -2615,7 +3039,6 @@ function exportExcel() {
     const wb = XLSX.utils.book_new();
     const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
 
-    // Sheet 1: Survey Info
     const runName = document.getElementById('runNameInput').value;
     const inspector = document.getElementById('inspectorInput').value;
     const metaArr = [
@@ -2625,67 +3048,64 @@ function exportExcel() {
         { Field: 'Track Category', Value: getTrackCat() || 'Not set' },
         ...Object.entries(metadata).map(([k, v]) => ({ Field: k, Value: v }))
     ];
-    const ws1 = XLSX.utils.json_to_sheet(metaArr);
-    XLSX.utils.book_append_sheet(wb, ws1, 'Survey Info');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(metaArr), 'Survey Info');
 
-    // Sheet 2: All Data
     const allData = parsedData.map(r => ({
         Miles: r.miles,
         Yards: r.yards,
         'Gauge (mm)': r.gauge,
         'X-Level (mm)': r.xlevel,
         'Twist 1 (mm)': r.twist1,
+        'Gauge Delta (mm)': Number.isFinite(r.gaugeDelta) ? r.gaugeDelta : '',
         Zone: r.zone
     }));
-    const ws2 = XLSX.utils.json_to_sheet(allData);
-    XLSX.utils.book_append_sheet(wb, ws2, 'All Data');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(allData), 'All Data');
 
-    // Sheet 3: Gauge Faults (auto + manual)
     const allGaugeFaultsExport = gaugeFaults.concat(manualGaugeFaults);
     const gaugeFaultNos = document.querySelectorAll('.fault-no-input[data-type="gauge"]');
     const gaugeRepeatCbs = document.querySelectorAll('.repeat-fault-cb[data-type="gauge"]');
     const gfData = allGaugeFaultsExport.map((f, i) => {
-        const c = classifyGaugeFault(f.worstGauge, lineSpeed, getTrackCat());
+        const effective = getEffectiveFault('gauge', i, f);
+        const c = classifyGaugeFault(effective.worstGauge, lineSpeed, getTrackCat());
         const dismissed = isDismissed('gauge', i);
-        const row = {
+        return {
             '#': i + 1,
             'Fault No.': gaugeFaultNos[i] ? gaugeFaultNos[i].value : '',
-            'Start Location': f.startLocation,
-            'End Location': f.endLocation,
-            'Length (yds)': f.length,
-            'Worst Gauge (mm)': f.worstGauge.toFixed(1),
-            'Deviation (mm)': f.deviation,
-            'Fault Type': c ? c.type : (f.direction === 'wide' ? 'Wide Gauge' : 'Tight Gauge'),
+            'Start Location': effective.startLocation,
+            'End Location': effective.endLocation,
+            'Length (yds)': effective.length,
+            'Worst Gauge (mm)': effective.worstGauge.toFixed(1),
+            'Deviation (mm)': effective.deviation,
+            'Fault Type': c ? c.type : (effective.direction === 'wide' ? 'Wide Gauge' : 'Tight Gauge'),
             'Category': c ? c.category : '',
             'Required Action': c ? c.action : '',
             'Repeat Fault': gaugeRepeatCbs[i] && gaugeRepeatCbs[i].checked ? 'Yes' : 'No',
             'Dismissed': dismissed ? 'Yes' : 'No',
             'Dismissed By': dismissed ? dismissed.inspector : '',
             'Dismissed Date': dismissed ? dismissed.displayTime : '',
-            'Dismissal Reason': dismissed ? dismissed.comment : ''
+            'Dismissal Reason': dismissed ? dismissed.comment : '',
+            'Edit Commentary': effective.edit ? effective.edit.commentary : '',
+            'Edited By': effective.edit ? effective.edit.inspector : ''
         };
-        return row;
     });
-    const ws3 = XLSX.utils.json_to_sheet(gfData.length ? gfData : [{ Info: 'No gauge faults' }]);
-    XLSX.utils.book_append_sheet(wb, ws3, 'Gauge Faults');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(gfData.length ? gfData : [{ Info: 'No gauge faults' }]), 'Gauge Faults');
 
-    // Sheet 4: Twist Faults (auto + manual)
     const allTwistFaultsExport = twistFaults.concat(manualTwistFaults);
     const twistFaultNos = document.querySelectorAll('.fault-no-input[data-type="twist"]');
     const twistRepeatCbs = document.querySelectorAll('.repeat-fault-cb[data-type="twist"]');
     const tfData = allTwistFaultsExport.map((f, i) => {
-        const isManual = f.manual;
-        const radius = isManual ? f.curveRadiusLessThan400 : twistFaultRadiusSettings[i];
-        const c = classifyTwistFault(f.maxAbsTwist, lineSpeed, radius);
+        const effective = getEffectiveFault('twist', i, f);
+        const radius = f.manual ? f.curveRadiusLessThan400 : twistFaultRadiusSettings[i];
+        const c = classifyTwistFault(effective.maxAbsTwist, lineSpeed, radius);
         const dismissed = isDismissed('twist', i);
         return {
             '#': i + 1,
             'Fault No.': twistFaultNos[i] ? twistFaultNos[i].value : '',
-            'Start Location': f.startLocation,
-            'End Location': f.endLocation,
-            'Length (yds)': f.length,
-            'Max |Twist| (mm)': f.maxAbsTwist.toFixed(1),
-            'Worst Value (mm)': f.worstValue.toFixed(1),
+            'Start Location': effective.startLocation,
+            'End Location': effective.endLocation,
+            'Length (yds)': effective.length,
+            'Max |Twist| (mm)': effective.maxAbsTwist.toFixed(1),
+            'Worst Value (mm)': effective.worstValue.toFixed(1),
             'Curve Radius': radius ? '< 400m' : '>= 400m',
             'Category': c ? c.category : '',
             'Required Action': c ? c.action : '',
@@ -2693,14 +3113,32 @@ function exportExcel() {
             'Dismissed': dismissed ? 'Yes' : 'No',
             'Dismissed By': dismissed ? dismissed.inspector : '',
             'Dismissed Date': dismissed ? dismissed.displayTime : '',
-            'Dismissal Reason': dismissed ? dismissed.comment : ''
+            'Dismissal Reason': dismissed ? dismissed.comment : '',
+            'Edit Commentary': effective.edit ? effective.edit.commentary : '',
+            'Edited By': effective.edit ? effective.edit.inspector : ''
         };
     });
-    const ws4 = XLSX.utils.json_to_sheet(tfData.length ? tfData : [{ Info: 'No twist faults' }]);
-    XLSX.utils.book_append_sheet(wb, ws4, 'Twist Faults');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tfData.length ? tfData : [{ Info: 'No twist faults' }]), 'Twist Faults');
 
-    const filename = 'TrackInspection_' + (metadata['Route ID'] || 'Report') + '_' +
-        (metadata['Track ID'] || '') + '.xlsx';
+    const gvData = gaugeVariationFaults.map((f, i) => {
+        const effective = getEffectiveFault('gaugeVariation', i, f);
+        const c = classifyGaugeVariationFault(effective.maxAbsGaugeDelta, lineSpeed);
+        return {
+            '#': i + 1,
+            'Start Location': effective.startLocation,
+            'End Location': effective.endLocation,
+            'Length (yds)': effective.length,
+            'Max |Gauge Delta| (mm)': effective.maxAbsGaugeDelta.toFixed(1),
+            'Worst Value (mm)': effective.worstGaugeDelta.toFixed(1),
+            'Category': c ? c.category : '',
+            'Required Action': c ? c.action : '',
+            'Edit Commentary': effective.edit ? effective.edit.commentary : '',
+            'Edited By': effective.edit ? effective.edit.inspector : ''
+        };
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(gvData.length ? gvData : [{ Info: 'No gauge variation faults' }]), 'Gauge Variation');
+
+    const filename = 'TrackInspection_' + (metadata['Route ID'] || 'Report') + '_' + (metadata['Track ID'] || '') + '.xlsx';
     XLSX.writeFile(wb, filename);
 }
 
@@ -2805,17 +3243,19 @@ function exportPDF() {
         doc.text('No gauge faults detected.', 14, 32);
     } else {
         const gaugeTableBody = allGaugeFaultsPdf.map((f, i) => {
-            const c = classifyGaugeFault(f.worstGauge, lineSpeed, getTrackCat());
+            const effective = getEffectiveFault('gauge', i, f);
+            const c = classifyGaugeFault(effective.worstGauge, lineSpeed, getTrackCat());
             const dismissed = isDismissed('gauge', i);
-            const actionCol = dismissed
-                ? (c ? c.action : '') + '\n[DISMISSED ' + dismissed.displayTime + ' by ' + dismissed.inspector + ': ' + dismissed.comment + ']'
-                : (c ? c.action : '');
+            const editNote = effective.edit ? '[EDITED by ' + effective.edit.inspector + ': ' + effective.edit.commentary + ']' : '';
+            let actionCol = c ? c.action : '';
+            if (dismissed) actionCol += '\n[DISMISSED ' + dismissed.displayTime + ' by ' + dismissed.inspector + ': ' + dismissed.comment + ']';
+            if (editNote) actionCol += '\n' + editNote;
             return [
                 (f.manual ? '* ' : '') + (i + 1),
                 pdfGaugeFaultNos[i] ? pdfGaugeFaultNos[i].value : '',
-                f.startLocation, f.endLocation, f.length,
-                f.worstGauge.toFixed(1), f.deviation,
-                c ? c.type : (f.direction === 'wide' ? 'Wide' : 'Tight'),
+                effective.startLocation, effective.endLocation, effective.length,
+                effective.worstGauge.toFixed(1), effective.deviation,
+                c ? c.type : (effective.direction === 'wide' ? 'Wide' : 'Tight'),
                 c ? c.category : '',
                 actionCol,
                 pdfGaugeRepeatCbs[i] && pdfGaugeRepeatCbs[i].checked ? 'Yes' : 'No'
@@ -2869,18 +3309,19 @@ function exportPDF() {
         doc.text('No twist faults detected.', 14, 32);
     } else {
         const twistTableBody = allTwistFaultsPdf.map((f, i) => {
-            const isManual = f.manual;
-            const radius = isManual ? f.curveRadiusLessThan400 : twistFaultRadiusSettings[i];
-            const c = classifyTwistFault(f.maxAbsTwist, lineSpeed, radius);
+            const effective = getEffectiveFault('twist', i, f);
+            const radius = f.manual ? f.curveRadiusLessThan400 : twistFaultRadiusSettings[i];
+            const c = classifyTwistFault(effective.maxAbsTwist, lineSpeed, radius);
             const dismissed = isDismissed('twist', i);
-            const actionCol = dismissed
-                ? (c ? c.action : '') + '\n[DISMISSED ' + dismissed.displayTime + ' by ' + dismissed.inspector + ': ' + dismissed.comment + ']'
-                : (c ? c.action : '');
+            const editNote = effective.edit ? '[EDITED by ' + effective.edit.inspector + ': ' + effective.edit.commentary + ']' : '';
+            let actionCol = c ? c.action : '';
+            if (dismissed) actionCol += '\n[DISMISSED ' + dismissed.displayTime + ' by ' + dismissed.inspector + ': ' + dismissed.comment + ']';
+            if (editNote) actionCol += '\n' + editNote;
             return [
                 (f.manual ? '* ' : '') + (i + 1),
                 pdfTwistFaultNos[i] ? pdfTwistFaultNos[i].value : '',
-                f.startLocation, f.endLocation, f.length,
-                f.maxAbsTwist.toFixed(1), f.worstValue.toFixed(1),
+                effective.startLocation, effective.endLocation, effective.length,
+                effective.maxAbsTwist.toFixed(1), effective.worstValue.toFixed(1),
                 radius ? '< 400m' : '>= 400m',
                 c ? c.category : '',
                 actionCol,
@@ -2919,27 +3360,84 @@ function exportPDF() {
     doc.text(`Signature: ${document.getElementById('twistSignOffSig').value}`, 120, tSignY + 8);
     doc.text(`Comments: ${document.getElementById('twistSignOffComments').value}`, 120, tSignY + 14);
 
+    // Page 4: Gauge Variation Faults
+    doc.addPage();
+    doc.setFontSize(14);
+    doc.setTextColor(26, 26, 46);
+    doc.text('Gauge Variation Faults - 3m Base - Line Speed: ' + (lineSpeed || 'N/A') + ' mph', 14, 20);
+
+    if (gaugeVariationFaults.length === 0) {
+        doc.setFontSize(11);
+        doc.setTextColor(100);
+        doc.text('No gauge variation faults detected (or Gauge Delta unavailable).', 14, 32);
+    } else {
+        const gvTableBody = gaugeVariationFaults.map((f, i) => {
+            const effective = getEffectiveFault('gaugeVariation', i, f);
+            const c = classifyGaugeVariationFault(effective.maxAbsGaugeDelta, lineSpeed);
+            const editNote = effective.edit ? '[EDITED by ' + effective.edit.inspector + ': ' + effective.edit.commentary + ']' : '';
+            return [
+                i + 1,
+                effective.startLocation,
+                effective.endLocation,
+                effective.length,
+                effective.maxAbsGaugeDelta.toFixed(1),
+                effective.worstGaugeDelta.toFixed(1),
+                c ? c.category : '',
+                (c ? c.action : '') + (editNote ? '\n' + editNote : '')
+            ];
+        });
+
+        doc.autoTable({
+            startY: 28,
+            head: [['#', 'Start', 'End', 'Length', 'Max |Gauge Delta|', 'Worst', 'Cat.', 'Required Action']],
+            body: gvTableBody,
+            theme: 'striped',
+            headStyles: { fillColor: [26, 26, 46] },
+            styles: { fontSize: 8 },
+            columnStyles: { 7: { cellWidth: 70 } }
+        });
+    }
+
     // Embed fault data as JSON in PDF properties for run-on-run comparison
     const allGFExportPdf = gaugeFaults.concat(manualGaugeFaults);
     const allTFExportPdf = twistFaults.concat(manualTwistFaults);
     const embedData = {
-        gaugeFaults: allGFExportPdf.map(f => ({
-            startMiles: f.startMiles, startYards: f.startYards,
-            endMiles: f.endMiles, endYards: f.endYards,
-            startLocation: f.startLocation, endLocation: f.endLocation,
-            worstGauge: f.worstGauge, deviation: f.deviation,
-            direction: f.direction, length: f.length
-        })),
-        twistFaults: allTFExportPdf.map(f => ({
-            startMiles: f.startMiles, startYards: f.startYards,
-            endMiles: f.endMiles, endYards: f.endYards,
-            startLocation: f.startLocation, endLocation: f.endLocation,
-            maxAbsTwist: f.maxAbsTwist, worstValue: f.worstValue, length: f.length
-        })),
+        gaugeFaults: allGFExportPdf.map((f, i) => {
+            const effective = getEffectiveFault('gauge', i, f);
+            return {
+                startMiles: effective.startMiles, startYards: effective.startYards,
+                endMiles: effective.endMiles, endYards: effective.endYards,
+                startLocation: effective.startLocation, endLocation: effective.endLocation,
+                worstGauge: effective.worstGauge, deviation: effective.deviation,
+                direction: effective.direction, length: effective.length,
+                edit: effective.edit || null
+            };
+        }),
+        twistFaults: allTFExportPdf.map((f, i) => {
+            const effective = getEffectiveFault('twist', i, f);
+            return {
+                startMiles: effective.startMiles, startYards: effective.startYards,
+                endMiles: effective.endMiles, endYards: effective.endYards,
+                startLocation: effective.startLocation, endLocation: effective.endLocation,
+                maxAbsTwist: effective.maxAbsTwist, worstValue: effective.worstValue, length: effective.length,
+                edit: effective.edit || null
+            };
+        }),
+        gaugeVariationFaults: gaugeVariationFaults.map((f, i) => {
+            const effective = getEffectiveFault('gaugeVariation', i, f);
+            return {
+                startMiles: effective.startMiles, startYards: effective.startYards,
+                endMiles: effective.endMiles, endYards: effective.endYards,
+                startLocation: effective.startLocation, endLocation: effective.endLocation,
+                maxAbsGaugeDelta: effective.maxAbsGaugeDelta, worstGaugeDelta: effective.worstGaugeDelta, length: effective.length,
+                edit: effective.edit || null
+            };
+        }),
         traceData: parsedData.map(r => ({
             miles: r.miles,
             yards: r.yards,
             gauge: r.gauge,
+            gaugeDelta: r.gaugeDelta,
             twist1: r.twist1,
             xlevel: r.xlevel
         })),
@@ -2947,7 +3445,8 @@ function exportPDF() {
         flipReason: runFlipReason,
         metadata: { 'Route ID': metadata['Route ID'] || '', 'Track ID': metadata['Track ID'] || '' },
         lineSpeed: lineSpeed,
-        trackCat: getTrackCat()
+        trackCat: getTrackCat(),
+        faultEdits: faultEdits
     };
     doc.setProperties({
         title: 'Track Inspection Report - ' + (metadata['Route ID'] || ''),
