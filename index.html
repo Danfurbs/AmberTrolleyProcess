@@ -3208,11 +3208,26 @@ function exportPDF() {
     const pageHeight = doc.internal.pageSize.getHeight();
     let chartY = doc.lastAutoTable.finalY + 8;
 
+    const getCanvasImageData = (canvas) => {
+        if (!canvas || !canvas.width || !canvas.height) return null;
+        try {
+            const dataUrl = canvas.toDataURL('image/png');
+            if (!dataUrl || dataUrl === 'data:,' || !dataUrl.startsWith('data:image/png')) return null;
+            return dataUrl;
+        } catch (err) {
+            console.warn('Skipping chart image due to PNG export error:', err);
+            return null;
+        }
+    };
+
     const maxSegments = Math.max(gaugeCanvases.length, twistCanvases.length);
     for (let i = 0; i < maxSegments; i++) {
         const gaugeCanvas = gaugeCanvases[i];
         const twistCanvas = twistCanvases[i];
         if (!gaugeCanvas || !twistCanvas) continue;
+        const gaugeImage = getCanvasImageData(gaugeCanvas);
+        const twistImage = getCanvasImageData(twistCanvas);
+        if (!gaugeImage || !twistImage) continue;
         let chartH = baseChartH;
         let blockHeight = chartH * 2 + (chartGap * 2);
         const availableHeight = pageHeight - chartY - 10;
@@ -3229,8 +3244,8 @@ function exportPDF() {
             chartH = baseChartH;
             blockHeight = chartH * 2 + (chartGap * 2);
         }
-        doc.addImage(gaugeCanvas.toDataURL('image/png'), 'PNG', 14, chartY, chartW, chartH);
-        doc.addImage(twistCanvas.toDataURL('image/png'), 'PNG', 14, chartY + chartH + chartGap, chartW, chartH);
+        doc.addImage(gaugeImage, 'PNG', 14, chartY, chartW, chartH);
+        doc.addImage(twistImage, 'PNG', 14, chartY + chartH + chartGap, chartW, chartH);
         chartY += blockHeight;
     }
 
