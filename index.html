@@ -380,16 +380,40 @@
                 </label>
             </div>
             <div class="override-field">
-                <label for="overrideGaugeTight">Gauge tight threshold (mm)</label>
-                <input type="number" id="overrideGaugeTight" step="0.1" placeholder="e.g. 1426">
+                <label for="overrideGaugeWideAL">Gauge wide AL threshold (mm)</label>
+                <input type="number" id="overrideGaugeWideAL" step="0.1" placeholder="e.g. 1445">
             </div>
             <div class="override-field">
-                <label for="overrideGaugeWide">Gauge wide threshold (mm)</label>
-                <input type="number" id="overrideGaugeWide" step="0.1" placeholder="e.g. 1445">
+                <label for="overrideGaugeWideIL">Gauge wide IL threshold (mm)</label>
+                <input type="number" id="overrideGaugeWideIL" step="0.1" placeholder="e.g. 1450">
             </div>
             <div class="override-field">
-                <label for="overrideTwist">Twist detection threshold (mm)</label>
-                <input type="number" id="overrideTwist" step="0.1" placeholder="e.g. 12">
+                <label for="overrideGaugeWideIAL">Gauge wide IAL threshold (mm)</label>
+                <input type="number" id="overrideGaugeWideIAL" step="0.1" placeholder="e.g. 1458">
+            </div>
+            <div class="override-field">
+                <label for="overrideGaugeTightAL">Gauge tight AL threshold (mm)</label>
+                <input type="number" id="overrideGaugeTightAL" step="0.1" placeholder="e.g. 1426">
+            </div>
+            <div class="override-field">
+                <label for="overrideGaugeTightIL">Gauge tight IL threshold (mm)</label>
+                <input type="number" id="overrideGaugeTightIL" step="0.1" placeholder="e.g. 1424">
+            </div>
+            <div class="override-field">
+                <label for="overrideGaugeTightIAL">Gauge tight IAL threshold (mm)</label>
+                <input type="number" id="overrideGaugeTightIAL" step="0.1" placeholder="e.g. 1422">
+            </div>
+            <div class="override-field">
+                <label for="overrideTwistAL">Twist AL threshold (mm)</label>
+                <input type="number" id="overrideTwistAL" step="0.1" placeholder="e.g. 12">
+            </div>
+            <div class="override-field">
+                <label for="overrideTwistIL">Twist IL threshold (mm)</label>
+                <input type="number" id="overrideTwistIL" step="0.1" placeholder="e.g. 15">
+            </div>
+            <div class="override-field">
+                <label for="overrideTwistIAL">Twist IAL threshold (mm)</label>
+                <input type="number" id="overrideTwistIAL" step="0.1" placeholder="e.g. 21/24">
             </div>
         </div>
         <p style="margin-top:12px;font-size:12px;color:#666;">
@@ -804,6 +828,7 @@ let twistFaultRadiusSettings = []; // true = <400m, false = >=400m
 // ---- Table 3: Twist Fault Limits (3m base) ----
 function classifyTwistFault(absValue, lineSpeed, curveRadiusLessThan400) {
     if (!lineSpeed || lineSpeed < 5) return null;
+    const thresholds = getTwistThresholds(lineSpeed);
 
     // IAL - Block the line: all speeds, >= 33mm
     if (absValue >= 33) {
@@ -812,22 +837,18 @@ function classifyTwistFault(absValue, lineSpeed, curveRadiusLessThan400) {
     }
 
     // IAL - Correct within 36 hours
-    if (lineSpeed <= 75 && absValue >= 24 && absValue < 33) {
-        return { category: 'IAL', badge: 'badge-ial', rowClass: 'cat-ial',
-            action: 'Correct within 36 hours' };
-    }
-    if (lineSpeed >= 80 && absValue >= 21 && absValue < 33) {
+    if (absValue >= thresholds.ial && absValue < 33) {
         return { category: 'IAL', badge: 'badge-ial', rowClass: 'cat-ial',
             action: 'Correct within 36 hours' };
     }
 
     // IL - Curve radius < 400m (max 65mph)
     if (curveRadiusLessThan400 && lineSpeed <= 65) {
-        if (absValue >= 18 && absValue < 24) {
+        if (absValue >= 18 && absValue < thresholds.ial) {
             return { category: 'IL', badge: 'badge-il', rowClass: 'cat-il',
                 action: 'Correct within 7 days' };
         }
-        if (absValue >= 15 && absValue < 18) {
+        if (absValue >= thresholds.il && absValue < 18) {
             return { category: 'IL', badge: 'badge-il', rowClass: 'cat-il',
                 action: 'Correct within 10 days' };
         }
@@ -836,7 +857,7 @@ function classifyTwistFault(absValue, lineSpeed, curveRadiusLessThan400) {
     // IL - Curve radius >= 400m (or < 400m but speed > 65 falls through to these)
     if (!curveRadiusLessThan400 || lineSpeed > 65) {
         if (lineSpeed <= 75) {
-            if (absValue >= 21 && absValue < 24) {
+            if (absValue >= 21 && absValue < thresholds.ial) {
                 return { category: 'IL', badge: 'badge-il', rowClass: 'cat-il',
                     action: 'Correct within 14 days' };
             }
@@ -844,7 +865,7 @@ function classifyTwistFault(absValue, lineSpeed, curveRadiusLessThan400) {
                 return { category: 'IL', badge: 'badge-il', rowClass: 'cat-il',
                     action: 'Correct within 21 days' };
             }
-            if (absValue >= 15 && absValue < 18) {
+            if (absValue >= thresholds.il && absValue < 18) {
                 return { category: 'IL', badge: 'badge-il', rowClass: 'cat-il',
                     action: 'Correct within 28 days' };
             }
@@ -854,7 +875,7 @@ function classifyTwistFault(absValue, lineSpeed, curveRadiusLessThan400) {
                 return { category: 'IL', badge: 'badge-il', rowClass: 'cat-il',
                     action: 'Correct within 14 days' };
             }
-            if (absValue >= 15 && absValue < 18) {
+            if (absValue >= thresholds.il && absValue < 18) {
                 return { category: 'IL', badge: 'badge-il', rowClass: 'cat-il',
                     action: 'Correct within 21 days' };
             }
@@ -862,7 +883,7 @@ function classifyTwistFault(absValue, lineSpeed, curveRadiusLessThan400) {
     }
 
     // AL - All speeds: 12mm to < 15mm
-    if (absValue >= 12 && absValue < 15) {
+    if (absValue >= thresholds.al && absValue < thresholds.il) {
         return { category: 'AL', badge: 'badge-al', rowClass: 'cat-al',
             action: 'Monitor (Alert Limit)' };
     }
@@ -873,6 +894,7 @@ function classifyTwistFault(absValue, lineSpeed, curveRadiusLessThan400) {
 // ---- Table 5: Gauge Fault Limits ----
 function classifyGaugeFault(gaugeValue, lineSpeed, trackCat) {
     if (!lineSpeed || lineSpeed < 5) return null;
+    const thresholds = getGaugeThresholds(lineSpeed);
     // Resolve track-category-dependent timescale for wide gauge IL
     const isHighCat = ['1A','1','2','3'].includes(trackCat);
     const isLowCat = ['4','5','6'].includes(trackCat);
@@ -904,53 +926,21 @@ function classifyGaugeFault(gaugeValue, lineSpeed, trackCat) {
                 action: 'Correct within 36 hours' };
         }
 
-        // IAL - Correct within 36 hours (Static Wide Gauge)
-        if (lineSpeed > 25 && gaugeValue >= 1458 && gaugeValue <= 1471) {
-            return { category: 'IAL', type: 'Static Wide Gauge', badge: 'badge-ial', rowClass: 'cat-ial',
-                action: 'Correct within 36 hours' };
-        }
-        if (lineSpeed <= 25 && gaugeValue >= 1460 && gaugeValue <= 1477) {
+        // IAL - Static Wide Gauge
+        if (gaugeValue >= thresholds.wide.ial && gaugeValue <= 1477) {
             return { category: 'IAL', type: 'Static Wide Gauge', badge: 'badge-ial', rowClass: 'cat-ial',
                 action: 'Correct within 36 hours' };
         }
 
-        // IL - Wide Gauge (Static plus dynamic movement)
-        if (lineSpeed >= 105 && gaugeValue >= 1458 && gaugeValue < 1463) {
-            return { category: 'IL', type: 'Wide Gauge', badge: 'badge-il', rowClass: 'cat-il',
-                action: wideILAction };
-        }
-        if (lineSpeed <= 100 && gaugeValue >= 1460 && gaugeValue < 1470) {
+        // IL - Wide Gauge
+        if (gaugeValue >= thresholds.wide.il && gaugeValue < thresholds.wide.ial) {
             return { category: 'IL', type: 'Wide Gauge', badge: 'badge-il', rowClass: 'cat-il',
                 action: wideILAction };
         }
 
-        // IL - Static Wide Gauge
-        if (lineSpeed >= 30 && gaugeValue >= 1450 && gaugeValue < 1458) {
-            return { category: 'IL', type: 'Static Wide Gauge', badge: 'badge-il', rowClass: 'cat-il',
-                action: 'Correct within 14 days' };
-        }
-        if (lineSpeed <= 25 && gaugeValue >= 1450 && gaugeValue < 1460) {
-            return { category: 'IL', type: 'Static Wide Gauge', badge: 'badge-il', rowClass: 'cat-il',
-                action: 'Correct within 14 days' };
-        }
-
-        // AL - Wide Gauge (Static plus dynamic movement)
-        if (lineSpeed >= 105 && gaugeValue >= 1450 && gaugeValue < 1458) {
+        // AL - Wide Gauge
+        if (gaugeValue >= thresholds.wide.al && gaugeValue < thresholds.wide.il) {
             return { category: 'AL', type: 'Wide Gauge', badge: 'badge-al', rowClass: 'cat-al',
-                action: 'Monitor (Alert Limit)' };
-        }
-        if (lineSpeed >= 30 && lineSpeed <= 100 && gaugeValue >= 1450 && gaugeValue < 1460) {
-            return { category: 'AL', type: 'Wide Gauge', badge: 'badge-al', rowClass: 'cat-al',
-                action: 'Monitor (Alert Limit)' };
-        }
-        if (lineSpeed <= 25 && gaugeValue >= 1455 && gaugeValue < 1460) {
-            return { category: 'AL', type: 'Wide Gauge', badge: 'badge-al', rowClass: 'cat-al',
-                action: 'Monitor (Alert Limit)' };
-        }
-
-        // AL - Static Wide Gauge (all speeds)
-        if (gaugeValue >= 1445 && gaugeValue < 1450) {
-            return { category: 'AL', type: 'Static Wide Gauge', badge: 'badge-al', rowClass: 'cat-al',
                 action: 'Monitor (Alert Limit)' };
         }
     }
@@ -958,32 +948,20 @@ function classifyGaugeFault(gaugeValue, lineSpeed, trackCat) {
     // --- TIGHT GAUGE (gauge below nominal) ---
     if (gaugeValue < 1435) {
 
-        // IL - Tight Gauge (severe)
-        if (lineSpeed >= 105 && gaugeValue <= 1426) {
-            return { category: 'IL', type: 'Tight Gauge', badge: 'badge-il', rowClass: 'cat-il',
-                action: 'Inspect within 14 days, correct within 84 days' };
-        }
-        if (lineSpeed <= 100 && gaugeValue <= 1422) {
-            return { category: 'IL', type: 'Tight Gauge', badge: 'badge-il', rowClass: 'cat-il',
-                action: 'Inspect within 14 days, correct within 84 days' };
+        // IAL - Tight Gauge
+        if (gaugeValue <= thresholds.tight.ial) {
+            return { category: 'IAL', type: 'Tight Gauge', badge: 'badge-ial', rowClass: 'cat-ial',
+                action: 'Correct within 36 hours' };
         }
 
-        // IL - Tight Gauge (review for hunting/rough rides)
-        if (lineSpeed >= 105 && gaugeValue > 1426 && gaugeValue <= 1428) {
+        // IL - Tight Gauge
+        if (gaugeValue <= thresholds.tight.il) {
             return { category: 'IL', type: 'Tight Gauge', badge: 'badge-il', rowClass: 'cat-il',
-                action: 'Review for reports of Hunting or Rough Rides within 28 days' };
-        }
-        if (lineSpeed <= 100 && gaugeValue > 1422 && gaugeValue <= 1424) {
-            return { category: 'IL', type: 'Tight Gauge', badge: 'badge-il', rowClass: 'cat-il',
-                action: 'Review for reports of Hunting or Rough Rides within 28 days' };
+                action: 'Inspect within 14 days, correct within 84 days' };
         }
 
         // AL - Tight Gauge
-        if (lineSpeed >= 105 && gaugeValue > 1428 && gaugeValue <= 1430) {
-            return { category: 'AL', type: 'Tight Gauge', badge: 'badge-al', rowClass: 'cat-al',
-                action: 'Monitor (Alert Limit)' };
-        }
-        if (lineSpeed <= 100 && gaugeValue > 1424 && gaugeValue <= 1426) {
+        if (gaugeValue <= thresholds.tight.al) {
             return { category: 'AL', type: 'Tight Gauge', badge: 'badge-al', rowClass: 'cat-al',
                 action: 'Monitor (Alert Limit)' };
         }
@@ -997,29 +975,59 @@ function getTrackCat() {
     return document.getElementById('trackCatInput').value || '';
 }
 
-function getGaugeDetectionThresholds(lineSpeed) {
+function getGaugeThresholds(lineSpeed) {
     const overrides = getOverrideSettings();
-    if (!lineSpeed || lineSpeed < 5) {
-        // Default broadest thresholds
-        const defaults = { tightBelow: 1430, wideAbove: 1445 };
-        return overrides.enabled ? applyGaugeOverrides(defaults, overrides) : defaults;
-    }
-    if (lineSpeed >= 105) {
-        const defaults = { tightBelow: 1430, wideAbove: 1445 };
-        return overrides.enabled ? applyGaugeOverrides(defaults, overrides) : defaults;
-    }
-    // 5 to 100mph
-    const defaults = { tightBelow: 1426, wideAbove: 1445 };
-    return overrides.enabled ? applyGaugeOverrides(defaults, overrides) : defaults;
+    const defaults = {
+        wide: {
+            al: 1445,
+            il: 1450,
+            ial: lineSpeed > 25 ? 1458 : 1460
+        },
+        tight: {
+            al: lineSpeed >= 105 ? 1430 : 1426,
+            il: lineSpeed >= 105 ? 1428 : 1424,
+            ial: lineSpeed >= 105 ? 1426 : 1422
+        }
+    };
+    if (!overrides.enabled) return defaults;
+    return {
+        wide: {
+            al: Number.isFinite(overrides.gaugeWideAL) ? overrides.gaugeWideAL : defaults.wide.al,
+            il: Number.isFinite(overrides.gaugeWideIL) ? overrides.gaugeWideIL : defaults.wide.il,
+            ial: Number.isFinite(overrides.gaugeWideIAL) ? overrides.gaugeWideIAL : defaults.wide.ial
+        },
+        tight: {
+            al: Number.isFinite(overrides.gaugeTightAL) ? overrides.gaugeTightAL : defaults.tight.al,
+            il: Number.isFinite(overrides.gaugeTightIL) ? overrides.gaugeTightIL : defaults.tight.il,
+            ial: Number.isFinite(overrides.gaugeTightIAL) ? overrides.gaugeTightIAL : defaults.tight.ial
+        }
+    };
+}
+
+function getTwistThresholds(lineSpeed) {
+    const overrides = getOverrideSettings();
+    const defaults = {
+        al: 12,
+        il: 15,
+        ial: lineSpeed >= 80 ? 21 : 24
+    };
+    if (!overrides.enabled) return defaults;
+    return {
+        al: Number.isFinite(overrides.twistAL) ? overrides.twistAL : defaults.al,
+        il: Number.isFinite(overrides.twistIL) ? overrides.twistIL : defaults.il,
+        ial: Number.isFinite(overrides.twistIAL) ? overrides.twistIAL : defaults.ial
+    };
+}
+
+function getGaugeDetectionThresholds(lineSpeed) {
+    const thresholds = getGaugeThresholds(lineSpeed);
+    return { tightBelow: thresholds.tight.al, wideAbove: thresholds.wide.al };
 }
 
 // Get the detection threshold for twist (lowest AL = 12mm)
 function getTwistDetectionThreshold() {
-    const overrides = getOverrideSettings();
-    if (overrides.enabled && Number.isFinite(overrides.twist)) {
-        return overrides.twist;
-    }
-    return 12;
+    const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
+    return getTwistThresholds(lineSpeed).al;
 }
 
 // ---- Upload (supports bulk / multiple files) ----
@@ -1059,9 +1067,15 @@ function handleFiles(files) {
                     faultEdits: {},
                     overrides: {
                         enabled: false,
-                        gaugeTight: '',
-                        gaugeWide: '',
-                        twist: ''
+                        gaugeWideAL: '',
+                        gaugeWideIL: '',
+                        gaugeWideIAL: '',
+                        gaugeTightAL: '',
+                        gaugeTightIL: '',
+                        gaugeTightIAL: '',
+                        twistAL: '',
+                        twistIL: '',
+                        twistIAL: ''
                     }
                 });
             } catch (err) {
@@ -1582,31 +1596,38 @@ function buildReport() {
     document.getElementById('lineSpeedInput').addEventListener('input', onLineSpeedChange);
     document.getElementById('trackCatInput').addEventListener('change', onLineSpeedChange);
     document.getElementById('overrideToggle').addEventListener('change', onOverrideChange);
-    document.getElementById('overrideGaugeTight').addEventListener('input', onOverrideChange);
-    document.getElementById('overrideGaugeWide').addEventListener('input', onOverrideChange);
-    document.getElementById('overrideTwist').addEventListener('input', onOverrideChange);
+    [
+        'overrideGaugeWideAL', 'overrideGaugeWideIL', 'overrideGaugeWideIAL',
+        'overrideGaugeTightAL', 'overrideGaugeTightIL', 'overrideGaugeTightIAL',
+        'overrideTwistAL', 'overrideTwistIL', 'overrideTwistIAL'
+    ].forEach(id => document.getElementById(id).addEventListener('input', onOverrideChange));
 }
 
 function applyOverrideSettings(overrides) {
     document.getElementById('overrideToggle').checked = !!overrides.enabled;
-    document.getElementById('overrideGaugeTight').value = overrides.gaugeTight ?? '';
-    document.getElementById('overrideGaugeWide').value = overrides.gaugeWide ?? '';
-    document.getElementById('overrideTwist').value = overrides.twist ?? '';
+    document.getElementById('overrideGaugeWideAL').value = overrides.gaugeWideAL ?? '';
+    document.getElementById('overrideGaugeWideIL').value = overrides.gaugeWideIL ?? '';
+    document.getElementById('overrideGaugeWideIAL').value = overrides.gaugeWideIAL ?? '';
+    document.getElementById('overrideGaugeTightAL').value = overrides.gaugeTightAL ?? '';
+    document.getElementById('overrideGaugeTightIL').value = overrides.gaugeTightIL ?? '';
+    document.getElementById('overrideGaugeTightIAL').value = overrides.gaugeTightIAL ?? '';
+    document.getElementById('overrideTwistAL').value = overrides.twistAL ?? '';
+    document.getElementById('overrideTwistIL').value = overrides.twistIL ?? '';
+    document.getElementById('overrideTwistIAL').value = overrides.twistIAL ?? '';
 }
 
 function getOverrideSettings() {
     return {
         enabled: document.getElementById('overrideToggle').checked,
-        gaugeTight: parseFloat(document.getElementById('overrideGaugeTight').value),
-        gaugeWide: parseFloat(document.getElementById('overrideGaugeWide').value),
-        twist: parseFloat(document.getElementById('overrideTwist').value)
-    };
-}
-
-function applyGaugeOverrides(defaults, overrides) {
-    return {
-        tightBelow: Number.isFinite(overrides.gaugeTight) ? overrides.gaugeTight : defaults.tightBelow,
-        wideAbove: Number.isFinite(overrides.gaugeWide) ? overrides.gaugeWide : defaults.wideAbove
+        gaugeWideAL: parseFloat(document.getElementById('overrideGaugeWideAL').value),
+        gaugeWideIL: parseFloat(document.getElementById('overrideGaugeWideIL').value),
+        gaugeWideIAL: parseFloat(document.getElementById('overrideGaugeWideIAL').value),
+        gaugeTightAL: parseFloat(document.getElementById('overrideGaugeTightAL').value),
+        gaugeTightIL: parseFloat(document.getElementById('overrideGaugeTightIL').value),
+        gaugeTightIAL: parseFloat(document.getElementById('overrideGaugeTightIAL').value),
+        twistAL: parseFloat(document.getElementById('overrideTwistAL').value),
+        twistIL: parseFloat(document.getElementById('overrideTwistIL').value),
+        twistIAL: parseFloat(document.getElementById('overrideTwistIAL').value)
     };
 }
 
@@ -1615,9 +1636,15 @@ function onOverrideChange() {
         const overrides = getOverrideSettings();
         allRuns[activeRunIndex].overrides = {
             enabled: overrides.enabled,
-            gaugeTight: Number.isFinite(overrides.gaugeTight) ? overrides.gaugeTight : '',
-            gaugeWide: Number.isFinite(overrides.gaugeWide) ? overrides.gaugeWide : '',
-            twist: Number.isFinite(overrides.twist) ? overrides.twist : ''
+            gaugeWideAL: Number.isFinite(overrides.gaugeWideAL) ? overrides.gaugeWideAL : '',
+            gaugeWideIL: Number.isFinite(overrides.gaugeWideIL) ? overrides.gaugeWideIL : '',
+            gaugeWideIAL: Number.isFinite(overrides.gaugeWideIAL) ? overrides.gaugeWideIAL : '',
+            gaugeTightAL: Number.isFinite(overrides.gaugeTightAL) ? overrides.gaugeTightAL : '',
+            gaugeTightIL: Number.isFinite(overrides.gaugeTightIL) ? overrides.gaugeTightIL : '',
+            gaugeTightIAL: Number.isFinite(overrides.gaugeTightIAL) ? overrides.gaugeTightIAL : '',
+            twistAL: Number.isFinite(overrides.twistAL) ? overrides.twistAL : '',
+            twistIL: Number.isFinite(overrides.twistIL) ? overrides.twistIL : '',
+            twistIAL: Number.isFinite(overrides.twistIAL) ? overrides.twistIAL : ''
         };
     }
     onLineSpeedChange();
@@ -1684,23 +1711,14 @@ function updateSummaryStats() {
 // ---- Chart threshold helpers ----
 function getGaugeChartThresholds(lineSpeed) {
     const lines = [];
+    const gaugeThresholds = getGaugeThresholds(lineSpeed);
     // Reference
     lines.push({ value: 1435, label: 'Reference (1435)', color: '#666', dash: [6, 4], width: 1 });
 
     // Wide gauge thresholds
-    lines.push({ value: 1445, label: 'Wide AL (1445)', color: '#28a745', dash: [4, 4], width: 1 });
-
-    if (lineSpeed >= 30) {
-        lines.push({ value: 1450, label: 'Wide IL (1450)', color: '#e67e22', dash: [5, 3], width: 1 });
-    } else if (lineSpeed >= 5) {
-        lines.push({ value: 1450, label: 'Wide IL (1450)', color: '#e67e22', dash: [5, 3], width: 1 });
-    }
-
-    if (lineSpeed > 25) {
-        lines.push({ value: 1458, label: 'Wide IAL (1458)', color: '#c0392b', dash: [6, 3], width: 1.5 });
-    } else if (lineSpeed >= 5) {
-        lines.push({ value: 1460, label: 'Wide IAL (1460)', color: '#c0392b', dash: [6, 3], width: 1.5 });
-    }
+    lines.push({ value: gaugeThresholds.wide.al, label: `Wide AL (${gaugeThresholds.wide.al})`, color: '#28a745', dash: [4, 4], width: 1 });
+    lines.push({ value: gaugeThresholds.wide.il, label: `Wide IL (${gaugeThresholds.wide.il})`, color: '#e67e22', dash: [5, 3], width: 1 });
+    lines.push({ value: gaugeThresholds.wide.ial, label: `Wide IAL (${gaugeThresholds.wide.ial})`, color: '#c0392b', dash: [6, 3], width: 1.5 });
 
     if (lineSpeed >= 105) {
         lines.push({ value: 1472, label: 'Block Line (1472)', color: '#721c24', dash: [8, 4], width: 2, hidden: true });
@@ -1709,31 +1727,19 @@ function getGaugeChartThresholds(lineSpeed) {
     }
 
     // Tight gauge thresholds
-    if (lineSpeed >= 105) {
-        lines.push({ value: 1430, label: 'Tight AL (1430)', color: '#28a745', dash: [4, 4], width: 1 });
-        lines.push({ value: 1428, label: 'Tight IL (1428)', color: '#e67e22', dash: [5, 3], width: 1 });
-        lines.push({ value: 1426, label: 'Tight IL (1426)', color: '#c0392b', dash: [6, 3], width: 1.5 });
-    } else if (lineSpeed >= 5) {
-        lines.push({ value: 1426, label: 'Tight AL (1426)', color: '#28a745', dash: [4, 4], width: 1 });
-        lines.push({ value: 1424, label: 'Tight IL (1424)', color: '#e67e22', dash: [5, 3], width: 1 });
-        lines.push({ value: 1422, label: 'Tight IL (1422)', color: '#c0392b', dash: [6, 3], width: 1.5 });
-    }
+    lines.push({ value: gaugeThresholds.tight.al, label: `Tight AL (${gaugeThresholds.tight.al})`, color: '#28a745', dash: [4, 4], width: 1 });
+    lines.push({ value: gaugeThresholds.tight.il, label: `Tight IL (${gaugeThresholds.tight.il})`, color: '#e67e22', dash: [5, 3], width: 1 });
+    lines.push({ value: gaugeThresholds.tight.ial, label: `Tight IAL (${gaugeThresholds.tight.ial})`, color: '#c0392b', dash: [6, 3], width: 1.5 });
 
     return lines;
 }
 
 function getTwistChartThresholds(lineSpeed) {
     const lines = [];
-    // AL: 12mm
-    lines.push({ value: 12, label: 'AL (12mm)', color: '#28a745', dash: [4, 4], width: 1 });
-    // IL: 15mm (lowest IL across all configurations)
-    lines.push({ value: 15, label: 'IL (15mm)', color: '#e67e22', dash: [5, 3], width: 1 });
-    // IAL: speed-dependent
-    if (lineSpeed >= 80) {
-        lines.push({ value: 21, label: 'IAL (21mm)', color: '#c0392b', dash: [6, 3], width: 1.5 });
-    } else if (lineSpeed >= 5) {
-        lines.push({ value: 24, label: 'IAL (24mm)', color: '#c0392b', dash: [6, 3], width: 1.5 });
-    }
+    const twistThresholds = getTwistThresholds(lineSpeed);
+    lines.push({ value: twistThresholds.al, label: `AL (${twistThresholds.al}mm)`, color: '#28a745', dash: [4, 4], width: 1 });
+    lines.push({ value: twistThresholds.il, label: `IL (${twistThresholds.il}mm)`, color: '#e67e22', dash: [5, 3], width: 1 });
+    lines.push({ value: twistThresholds.ial, label: `IAL (${twistThresholds.ial}mm)`, color: '#c0392b', dash: [6, 3], width: 1.5 });
     // Block line: 33mm
     lines.push({ value: 33, label: 'Block (33mm)', color: '#721c24', dash: [8, 4], width: 2 });
     return lines;
