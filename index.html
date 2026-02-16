@@ -245,8 +245,6 @@
         }
         .btn-edit-fault:hover { background: #4a6cf7; color: #fff; }
 
-        tr.dismissed-fault td { text-decoration: line-through; color: #999; }
-        tr.dismissed-fault { opacity: 0.65; }
         .dismissed-info {
             display: block; font-size: 10px; color: #888; font-style: italic;
             text-decoration: none; margin-top: 2px;
@@ -425,6 +423,7 @@
         <button class="tab active" data-page="overview">Overview &amp; Graphs</button>
         <button class="tab" data-page="gaugeFaults">Gauge Faults</button>
         <button class="tab" data-page="twistFaults">Twist Faults</button>
+        <button class="tab" data-page="invalidatedFaults">Invalidated Faults</button>
         <button class="tab" data-page="gaugeVariationFaults">Gauge Variation Faults</button>
     </div>
 
@@ -591,7 +590,35 @@
         </div>
     </div>
 
-    <!-- Page 4: Gauge Variation Faults -->
+
+    <!-- Page 4: Invalidated Faults -->
+    <div class="page" id="page-invalidatedFaults">
+        <div class="card">
+            <h3>Invalidated Faults</h3>
+            <p style="margin-bottom: 12px; color: #666; font-size: 13px;">
+                Faults removed from active reporting. Use restore if a fault was invalidated by mistake.
+            </p>
+            <div style="overflow-x: auto;">
+                <table id="invalidatedFaultTable">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Type</th>
+                            <th>Location</th>
+                            <th>Value</th>
+                            <th>Removed By</th>
+                            <th>Removed At</th>
+                            <th>Reason</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Page 5: Gauge Variation Faults -->
     <div class="page" id="page-gaugeVariationFaults">
         <div class="card">
             <h3>Gauge Variation Faults - 3m Base</h3>
@@ -772,26 +799,26 @@
     </div>
 </div>
 
-<!-- Dismiss Fault Modal -->
+<!-- Delete Fault Modal -->
 <div class="modal-overlay" id="dismissModal">
     <div class="modal">
-        <h3>Dismiss Fault</h3>
+        <h3>Delete Fault</h3>
         <p style="margin-bottom: 16px; color: #666; font-size: 13px;">
-            This fault will be kept on the record with a line through it. Please provide a reason for dismissal.
+            This fault will be removed from this run. Please provide a reason for deletion.
         </p>
         <div class="modal-field">
             <label>Inspector Name</label>
             <input type="text" id="dismissInspector" placeholder="Enter your name...">
         </div>
         <div class="modal-field">
-            <label>Reason for Dismissal</label>
+            <label>Reason for Deletion</label>
             <input type="text" id="dismissReason" placeholder="e.g. False reading, track geometry confirmed OK on site">
         </div>
         <input type="hidden" id="dismissFaultType">
         <input type="hidden" id="dismissFaultIdx">
         <div class="modal-actions">
             <button class="btn-modal-cancel" onclick="closeModal('dismissModal')">Cancel</button>
-            <button class="btn-modal-save" onclick="confirmDismissFault()">Dismiss Fault</button>
+            <button class="btn-modal-save" onclick="confirmDismissFault()">Delete Fault</button>
         </div>
     </div>
 </div>
@@ -810,7 +837,7 @@ let gaugeVariationChartInstances = [];
 let runTraceFlipped = false;
 let runFlipReason = '';
 
-// Dismissed faults: keyed by "gauge-{idx}" or "twist-{idx}", stores {timestamp, comment, inspector}
+// Deleted faults: keyed by "gauge-{idx}" or "twist-{idx}", stores {timestamp, comment, inspector}
 let dismissedFaults = {};
 let faultEdits = {};
 
@@ -1065,6 +1092,12 @@ function handleFiles(files) {
                     manualTwistFaults: [],
                     dismissedFaults: {},
                     faultEdits: {},
+                    settings: {
+                        runName: '',
+                        inspector: '',
+                        lineSpeed: '',
+                        trackCat: ''
+                    },
                     overrides: {
                         enabled: false,
                         gaugeWideAL: '',
@@ -1273,10 +1306,18 @@ function switchRun(index) {
     faultEdits = run.faultEdits || {};
     applyOverrideSettings(run.overrides || {});
 
-    const derivedSpeed = getLineSpeedFromZones(parsedData);
-    if (Number.isFinite(derivedSpeed)) {
-        document.getElementById('lineSpeedInput').value = derivedSpeed;
+    const savedSettings = run.settings || {};
+    document.getElementById('runNameInput').value = savedSettings.runName || '';
+    document.getElementById('inspectorInput').value = savedSettings.inspector || '';
+
+    const savedLineSpeed = parseInt(savedSettings.lineSpeed, 10);
+    if (Number.isFinite(savedLineSpeed) && savedLineSpeed >= 5) {
+        document.getElementById('lineSpeedInput').value = savedLineSpeed;
+    } else {
+        const derivedSpeed = getLineSpeedFromZones(parsedData);
+        document.getElementById('lineSpeedInput').value = Number.isFinite(derivedSpeed) ? derivedSpeed : '';
     }
+    document.getElementById('trackCatInput').value = savedSettings.trackCat || '';
 
     document.getElementById('runSelector').value = index;
     identifyFaults();
@@ -1578,6 +1619,7 @@ function buildReport() {
     buildGaugeFaultTable();
     buildTwistFaultTable();
     buildGaugeVariationFaultTable();
+    buildInvalidatedFaultTable();
     updateSpeedWarning();
     updateComparison();
 
@@ -1595,6 +1637,8 @@ function buildReport() {
     document.getElementById('lineSpeedInput').addEventListener('change', onLineSpeedChange);
     document.getElementById('lineSpeedInput').addEventListener('input', onLineSpeedChange);
     document.getElementById('trackCatInput').addEventListener('change', onLineSpeedChange);
+    document.getElementById('runNameInput').addEventListener('input', persistRunSettings);
+    document.getElementById('inspectorInput').addEventListener('input', persistRunSettings);
     document.getElementById('overrideToggle').addEventListener('change', onOverrideChange);
     [
         'overrideGaugeWideAL', 'overrideGaugeWideIL', 'overrideGaugeWideIAL',
@@ -1651,14 +1695,99 @@ function onOverrideChange() {
 }
 
 function onLineSpeedChange() {
+    persistRunSettings();
     identifyFaults();
     updateSummaryStats();
     buildGaugeFaultTable();
     buildTwistFaultTable();
     buildGaugeVariationFaultTable();
+    buildInvalidatedFaultTable();
     buildCharts();
     buildSchematic();
     updateSpeedWarning();
+}
+
+function persistRunSettings() {
+    if (activeRunIndex < 0 || !allRuns[activeRunIndex]) return;
+    const speedInput = document.getElementById('lineSpeedInput').value;
+    const speed = parseInt(speedInput, 10);
+    allRuns[activeRunIndex].settings = {
+        runName: document.getElementById('runNameInput').value.trim(),
+        inspector: document.getElementById('inspectorInput').value.trim(),
+        lineSpeed: Number.isFinite(speed) ? speed : '',
+        trackCat: getTrackCat()
+    };
+}
+
+function getVisibleGaugeFaults() {
+    return gaugeFaults.concat(manualGaugeFaults).filter((_, idx) => !isDismissed('gauge', idx));
+}
+
+function getVisibleTwistFaults() {
+    return twistFaults.concat(manualTwistFaults).filter((_, idx) => !isDismissed('twist', idx));
+}
+
+function getFaultByTypeAndIndex(faultType, idx) {
+    if (faultType === 'gauge') {
+        const allGaugeFaults = gaugeFaults.concat(manualGaugeFaults);
+        return allGaugeFaults[idx] || null;
+    }
+    if (faultType === 'twist') {
+        const allTwistFaults = twistFaults.concat(manualTwistFaults);
+        return allTwistFaults[idx] || null;
+    }
+    return null;
+}
+
+function getInvalidatedFaultRows() {
+    return Object.entries(dismissedFaults)
+        .map(([key, info]) => {
+            const [faultType, idxText] = key.split('-');
+            const idx = parseInt(idxText, 10);
+            const sourceFault = getFaultByTypeAndIndex(faultType, idx);
+            const effective = sourceFault ? getEffectiveFault(faultType, idx, sourceFault) : null;
+            const valueText = faultType === 'gauge'
+                ? (effective && Number.isFinite(effective.worstGauge) ? effective.worstGauge.toFixed(1) + ' mm' : '--')
+                : (effective && Number.isFinite(effective.maxAbsTwist) ? effective.maxAbsTwist.toFixed(1) + ' mm' : '--');
+            const locationText = effective
+                ? (effective.startLocation + ' - ' + effective.endLocation)
+                : (info.startLocation && info.endLocation ? info.startLocation + ' - ' + info.endLocation : '--');
+            return {
+                key,
+                faultType,
+                idx,
+                typeLabel: faultType === 'gauge' ? 'Gauge' : 'Twist',
+                locationText,
+                valueText,
+                removedBy: info.inspector || 'Unknown',
+                removedAt: info.displayTime || '',
+                reason: info.comment || '',
+                timestamp: info.timestamp || ''
+            };
+        })
+        .sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+}
+
+function buildInvalidatedFaultTable() {
+    const tbody = document.querySelector('#invalidatedFaultTable tbody');
+    if (!tbody) return;
+    const rows = getInvalidatedFaultRows();
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:#888;">No invalidated faults</td></tr>';
+        return;
+    }
+    tbody.innerHTML = rows.map((row, i) => `
+        <tr>
+            <td>${i + 1}</td>
+            <td>${row.typeLabel}</td>
+            <td>${row.locationText}</td>
+            <td>${row.valueText}</td>
+            <td>${row.removedBy}</td>
+            <td>${row.removedAt}</td>
+            <td style="max-width:320px;">${row.reason}</td>
+            <td><button class="btn-restore-fault" onclick="restoreFault('${row.faultType}', ${row.idx})">Restore</button></td>
+        </tr>
+    `).join('');
 }
 
 function updateSpeedWarning() {
@@ -1682,8 +1811,8 @@ function updateSummaryStats() {
     const maxGaugeVariation = gaugeDeltaValues.length ? Math.max(...gaugeDeltaValues.map(v => Math.abs(v))) : 0;
 
     const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
-    const allGaugeFaults = gaugeFaults.concat(manualGaugeFaults);
-    const allTwistFaults = twistFaults.concat(manualTwistFaults);
+    const allGaugeFaults = getVisibleGaugeFaults();
+    const allTwistFaults = getVisibleTwistFaults();
     const ialGauge = allGaugeFaults.filter(f => { const c = classifyGaugeFault(f.worstGauge, lineSpeed, getTrackCat()); return c && c.category === 'IAL'; }).length;
     const ialTwist = allTwistFaults.filter((f, i) => {
         const isManual = i >= twistFaults.length;
@@ -2083,12 +2212,13 @@ function buildGaugeFaultTable() {
         return;
     }
 
+    let visibleIdx = 0;
     allGaugeFaults.forEach((f, idx) => {
         const effective = getEffectiveFault('gauge', idx, f);
-        const dismissed = isDismissed('gauge', idx);
+        if (isDismissed('gauge', idx)) return;
         const classification = classifyGaugeFault(effective.worstGauge, lineSpeed, getTrackCat());
         const tr = document.createElement('tr');
-        tr.className = (classification ? classification.rowClass : '') + (dismissed ? ' dismissed-fault' : '');
+        tr.className = classification ? classification.rowClass : '';
 
         const catBadge = classification
             ? `<span class="badge ${classification.badge}">${classification.category}</span>`
@@ -2096,24 +2226,17 @@ function buildGaugeFaultTable() {
         const faultType = classification ? classification.type : (effective.direction === 'wide' ? 'Wide Gauge' : 'Tight Gauge');
         const actionText = classification ? classification.action : (lineSpeed < 5 ? 'Set line speed' : 'Below threshold');
         const manualTag = f.manual ? '<span class="manual-fault-tag">MANUAL</span>' : '';
-        const removeBtn = f.manual && !dismissed ? `<button class="btn-remove-fault" onclick="removeManualGaugeFault(${idx - gaugeFaults.length})" title="Remove manual fault">X</button> ` : '';
+        const removeBtn = f.manual ? `<button class="btn-remove-fault" onclick="removeManualGaugeFault(${idx - gaugeFaults.length})" title="Remove manual fault">X</button> ` : '';
         const editBtn = `<button class="btn-edit-fault" onclick="openEditFaultModal('gauge',${idx})">Edit</button>`;
         const editInfo = effective.edit
             ? `<span class="dismissed-info">Override by ${effective.edit.inspector}: ${effective.edit.commentary}</span>`
             : '';
         const defaultFaultNo = f.manual && f.faultNo ? f.faultNo : '';
 
-        let dismissBtn;
-        let dismissInfo = '';
-        if (dismissed) {
-            dismissBtn = `<button class="btn-restore-fault" onclick="restoreFault('gauge',${idx})">Restore</button>`;
-            dismissInfo = `<span class="dismissed-info">Dismissed by ${dismissed.inspector} on ${dismissed.displayTime}: ${dismissed.comment}</span>`;
-        } else {
-            dismissBtn = `<button class="btn-dismiss-fault" onclick="openDismissModal('gauge',${idx})">Dismiss</button>`;
-        }
+        const dismissBtn = `<button class="btn-dismiss-fault" onclick="openDismissModal('gauge',${idx})">Delete</button>`;
 
         tr.innerHTML = `
-            <td>${idx + 1} ${manualTag}</td>
+            <td>${visibleIdx + 1} ${manualTag}</td>
             <td><input type="text" class="fault-no-input" data-type="gauge" data-idx="${idx}" placeholder="--" value="${defaultFaultNo}" style="width:55px;padding:3px 5px;border:1px solid #ccc;border-radius:4px;font-size:11px;text-align:center;"></td>
             <td>${effective.startLocation}</td>
             <td>${effective.endLocation}</td>
@@ -2122,10 +2245,11 @@ function buildGaugeFaultTable() {
             <td>${effective.deviation}</td>
             <td>${faultType}</td>
             <td>${catBadge}</td>
-            <td style="font-size:11px;max-width:220px;">${actionText} ${editBtn} ${removeBtn}${dismissBtn}${dismissInfo}${editInfo}</td>
+            <td style="font-size:11px;max-width:220px;">${actionText} ${editBtn} ${removeBtn}${dismissBtn}${editInfo}</td>
             <td style="text-align:center;"><input type="checkbox" class="repeat-fault-cb" data-type="gauge" data-idx="${idx}"></td>
         `;
         tbody.appendChild(tr);
+        visibleIdx++;
     });
 }
 function buildTwistFaultTable() {
@@ -2138,37 +2262,31 @@ function buildTwistFaultTable() {
         return;
     }
 
+    let visibleIdx = 0;
     allTwistFaults.forEach((f, idx) => {
         const effective = getEffectiveFault('twist', idx, f);
-        const dismissed = isDismissed('twist', idx);
+        if (isDismissed('twist', idx)) return;
         const isLessThan400 = f.manual ? f.curveRadiusLessThan400 : twistFaultRadiusSettings[idx];
         const classification = classifyTwistFault(effective.maxAbsTwist, lineSpeed, isLessThan400);
         const tr = document.createElement('tr');
-        tr.className = (classification ? classification.rowClass : '') + (dismissed ? ' dismissed-fault' : '');
+        tr.className = classification ? classification.rowClass : '';
 
         const catBadge = classification
             ? `<span class="badge ${classification.badge}">${classification.category}</span>`
             : '<span style="color:#999;">--</span>';
         const actionText = classification ? classification.action : (lineSpeed < 5 ? 'Set line speed' : 'Below threshold');
         const manualTag = f.manual ? '<span class="manual-fault-tag">MANUAL</span>' : '';
-        const removeBtn = f.manual && !dismissed ? `<button class="btn-remove-fault" onclick="removeManualTwistFault(${idx - twistFaults.length})" title="Remove manual fault">X</button> ` : '';
+        const removeBtn = f.manual ? `<button class="btn-remove-fault" onclick="removeManualTwistFault(${idx - twistFaults.length})" title="Remove manual fault">X</button> ` : '';
         const editBtn = `<button class="btn-edit-fault" onclick="openEditFaultModal('twist',${idx})">Edit</button>`;
         const editInfo = effective.edit
             ? `<span class="dismissed-info">Override by ${effective.edit.inspector}: ${effective.edit.commentary}</span>`
             : '';
         const defaultFaultNo = f.manual && f.faultNo ? f.faultNo : '';
 
-        let dismissBtn;
-        let dismissInfo = '';
-        if (dismissed) {
-            dismissBtn = `<button class="btn-restore-fault" onclick="restoreFault('twist',${idx})">Restore</button>`;
-            dismissInfo = `<span class="dismissed-info">Dismissed by ${dismissed.inspector} on ${dismissed.displayTime}: ${dismissed.comment}</span>`;
-        } else {
-            dismissBtn = `<button class="btn-dismiss-fault" onclick="openDismissModal('twist',${idx})">Dismiss</button>`;
-        }
+        const dismissBtn = `<button class="btn-dismiss-fault" onclick="openDismissModal('twist',${idx})">Delete</button>`;
 
         tr.innerHTML = `
-            <td>${idx + 1} ${manualTag}</td>
+            <td>${visibleIdx + 1} ${manualTag}</td>
             <td><input type="text" class="fault-no-input" data-type="twist" data-idx="${idx}" placeholder="--" value="${defaultFaultNo}" style="width:55px;padding:3px 5px;border:1px solid #ccc;border-radius:4px;font-size:11px;text-align:center;"></td>
             <td>${effective.startLocation}</td>
             <td>${effective.endLocation}</td>
@@ -2182,10 +2300,11 @@ function buildTwistFaultTable() {
                 </select>
             </td>
             <td>${catBadge}</td>
-            <td style="font-size:11px;max-width:220px;">${actionText} ${editBtn} ${removeBtn}${dismissBtn}${dismissInfo}${editInfo}</td>
+            <td style="font-size:11px;max-width:220px;">${actionText} ${editBtn} ${removeBtn}${dismissBtn}${editInfo}</td>
             <td style="text-align:center;"><input type="checkbox" class="repeat-fault-cb" data-type="twist" data-idx="${idx}"></td>
         `;
         tbody.appendChild(tr);
+        visibleIdx++;
     });
 }
 function onRadiusChange(selectEl) {
@@ -2387,7 +2506,7 @@ function removeManualTwistFault(manualIdx) {
     updateSummaryStats();
 }
 
-// ---- Dismiss / Restore Faults ----
+// ---- Delete Faults ----
 function openDismissModal(faultType, idx) {
     document.getElementById('dismissFaultType').value = faultType;
     document.getElementById('dismissFaultIdx').value = idx;
@@ -2403,17 +2522,21 @@ function confirmDismissFault() {
     const reason = document.getElementById('dismissReason').value.trim();
 
     if (!reason) {
-        alert('Please provide a reason for dismissal.');
+        alert('Please provide a reason for deletion.');
         return;
     }
 
     const key = faultType + '-' + idx;
     const now = new Date();
+    const sourceFault = getFaultByTypeAndIndex(faultType, idx);
+    const effective = sourceFault ? getEffectiveFault(faultType, idx, sourceFault) : null;
     dismissedFaults[key] = {
         timestamp: now.toISOString(),
         displayTime: now.toLocaleDateString('en-GB') + ' ' + now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
         comment: reason,
-        inspector: inspector || 'Unknown'
+        inspector: inspector || 'Unknown',
+        startLocation: effective ? effective.startLocation : '',
+        endLocation: effective ? effective.endLocation : ''
     };
 
     // Persist to current run
@@ -2427,22 +2550,19 @@ function confirmDismissFault() {
     } else {
         buildTwistFaultTable();
     }
+    buildInvalidatedFaultTable();
     updateSummaryStats();
 }
 
 function restoreFault(faultType, idx) {
     const key = faultType + '-' + idx;
     delete dismissedFaults[key];
-
     if (activeRunIndex >= 0 && allRuns[activeRunIndex]) {
         allRuns[activeRunIndex].dismissedFaults = Object.assign({}, dismissedFaults);
     }
-
-    if (faultType === 'gauge') {
-        buildGaugeFaultTable();
-    } else {
-        buildTwistFaultTable();
-    }
+    buildGaugeFaultTable();
+    buildTwistFaultTable();
+    buildInvalidatedFaultTable();
     updateSummaryStats();
 }
 
@@ -3071,9 +3191,9 @@ function exportExcel() {
     const gaugeFaultNos = document.querySelectorAll('.fault-no-input[data-type="gauge"]');
     const gaugeRepeatCbs = document.querySelectorAll('.repeat-fault-cb[data-type="gauge"]');
     const gfData = allGaugeFaultsExport.map((f, i) => {
+        if (isDismissed('gauge', i)) return null;
         const effective = getEffectiveFault('gauge', i, f);
         const c = classifyGaugeFault(effective.worstGauge, lineSpeed, getTrackCat());
-        const dismissed = isDismissed('gauge', i);
         return {
             '#': i + 1,
             'Fault No.': gaugeFaultNos[i] ? gaugeFaultNos[i].value : '',
@@ -3086,24 +3206,20 @@ function exportExcel() {
             'Category': c ? c.category : '',
             'Required Action': c ? c.action : '',
             'Repeat Fault': gaugeRepeatCbs[i] && gaugeRepeatCbs[i].checked ? 'Yes' : 'No',
-            'Dismissed': dismissed ? 'Yes' : 'No',
-            'Dismissed By': dismissed ? dismissed.inspector : '',
-            'Dismissed Date': dismissed ? dismissed.displayTime : '',
-            'Dismissal Reason': dismissed ? dismissed.comment : '',
             'Edit Commentary': effective.edit ? effective.edit.commentary : '',
             'Edited By': effective.edit ? effective.edit.inspector : ''
         };
-    });
+    }).filter(Boolean);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(gfData.length ? gfData : [{ Info: 'No gauge faults' }]), 'Gauge Faults');
 
     const allTwistFaultsExport = twistFaults.concat(manualTwistFaults);
     const twistFaultNos = document.querySelectorAll('.fault-no-input[data-type="twist"]');
     const twistRepeatCbs = document.querySelectorAll('.repeat-fault-cb[data-type="twist"]');
     const tfData = allTwistFaultsExport.map((f, i) => {
+        if (isDismissed('twist', i)) return null;
         const effective = getEffectiveFault('twist', i, f);
         const radius = f.manual ? f.curveRadiusLessThan400 : twistFaultRadiusSettings[i];
         const c = classifyTwistFault(effective.maxAbsTwist, lineSpeed, radius);
-        const dismissed = isDismissed('twist', i);
         return {
             '#': i + 1,
             'Fault No.': twistFaultNos[i] ? twistFaultNos[i].value : '',
@@ -3116,15 +3232,22 @@ function exportExcel() {
             'Category': c ? c.category : '',
             'Required Action': c ? c.action : '',
             'Repeat Fault': twistRepeatCbs[i] && twistRepeatCbs[i].checked ? 'Yes' : 'No',
-            'Dismissed': dismissed ? 'Yes' : 'No',
-            'Dismissed By': dismissed ? dismissed.inspector : '',
-            'Dismissed Date': dismissed ? dismissed.displayTime : '',
-            'Dismissal Reason': dismissed ? dismissed.comment : '',
             'Edit Commentary': effective.edit ? effective.edit.commentary : '',
             'Edited By': effective.edit ? effective.edit.inspector : ''
         };
-    });
+    }).filter(Boolean);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tfData.length ? tfData : [{ Info: 'No twist faults' }]), 'Twist Faults');
+
+    const invalidatedData = getInvalidatedFaultRows().map((row, i) => ({
+        '#': i + 1,
+        'Fault Type': row.typeLabel,
+        'Location': row.locationText,
+        'Value': row.valueText,
+        'Removed By': row.removedBy,
+        'Removed At': row.removedAt,
+        'Reason': row.reason
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(invalidatedData.length ? invalidatedData : [{ Info: 'No invalidated faults' }]), 'Invalidated Faults');
 
     const gvData = gaugeVariationFaults.map((f, i) => {
         const effective = getEffectiveFault('gaugeVariation', i, f);
@@ -3186,8 +3309,8 @@ function exportPDF() {
         head: [['Total Points', 'Gauge Faults', 'Twist Faults', 'Min Gauge', 'Max Gauge', 'Max |Twist|']],
         body: [[
             parsedData.length,
-            gaugeFaults.length + manualGaugeFaults.length,
-            twistFaults.length + manualTwistFaults.length,
+            getVisibleGaugeFaults().length,
+            getVisibleTwistFaults().length,
             Math.min(...parsedData.map(r => r.gauge)).toFixed(1) + ' mm',
             Math.max(...parsedData.map(r => r.gauge)).toFixed(1) + ' mm',
             (parsedData.filter(r => r.twist1 !== null).length > 0
@@ -3256,20 +3379,20 @@ function exportPDF() {
     doc.text('Gauge Faults (Table 5 Limits) - Line Speed: ' + (lineSpeed || 'N/A') + ' mph - Track Cat: ' + (getTrackCat() || 'N/A'), 14, 20);
 
     const allGaugeFaultsPdf = gaugeFaults.concat(manualGaugeFaults);
+    const visibleGaugeFaultsPdf = allGaugeFaultsPdf.filter((_, i) => !isDismissed('gauge', i));
     const pdfGaugeFaultNos = document.querySelectorAll('.fault-no-input[data-type="gauge"]');
     const pdfGaugeRepeatCbs = document.querySelectorAll('.repeat-fault-cb[data-type="gauge"]');
-    if (allGaugeFaultsPdf.length === 0) {
+    if (visibleGaugeFaultsPdf.length === 0) {
         doc.setFontSize(11);
         doc.setTextColor(100);
         doc.text('No gauge faults detected.', 14, 32);
     } else {
         const gaugeTableBody = allGaugeFaultsPdf.map((f, i) => {
+            if (isDismissed('gauge', i)) return null;
             const effective = getEffectiveFault('gauge', i, f);
             const c = classifyGaugeFault(effective.worstGauge, lineSpeed, getTrackCat());
-            const dismissed = isDismissed('gauge', i);
             const editNote = effective.edit ? '[EDITED by ' + effective.edit.inspector + ': ' + effective.edit.commentary + ']' : '';
             let actionCol = c ? c.action : '';
-            if (dismissed) actionCol += '\n[DISMISSED ' + dismissed.displayTime + ' by ' + dismissed.inspector + ': ' + dismissed.comment + ']';
             if (editNote) actionCol += '\n' + editNote;
             return [
                 (f.manual ? '* ' : '') + (i + 1),
@@ -3281,10 +3404,7 @@ function exportPDF() {
                 actionCol,
                 pdfGaugeRepeatCbs[i] && pdfGaugeRepeatCbs[i].checked ? 'Yes' : 'No'
             ];
-        });
-        // Build map of dismissed row indices for styling
-        const gaugeDismissedRows = {};
-        allGaugeFaultsPdf.forEach((f, i) => { if (isDismissed('gauge', i)) gaugeDismissedRows[i] = true; });
+        }).filter(Boolean);
 
         doc.autoTable({
             startY: 28,
@@ -3293,18 +3413,13 @@ function exportPDF() {
             theme: 'striped',
             headStyles: { fillColor: [26, 26, 46] },
             styles: { fontSize: 7 },
-            columnStyles: { 9: { cellWidth: 50 } },
-            didParseCell: function(data) {
-                if (data.section === 'body' && gaugeDismissedRows[data.row.index]) {
-                    data.cell.styles.textColor = [160, 160, 160];
-                    data.cell.styles.fontStyle = 'italic';
-                }
-            }
+            columnStyles: { 9: { cellWidth: 50 } }
         });
+
     }
 
     // Gauge sign-off
-    const gSignY = allGaugeFaultsPdf.length > 0 ? doc.lastAutoTable.finalY + 12 : 44;
+    const gSignY = visibleGaugeFaultsPdf.length > 0 ? doc.lastAutoTable.finalY + 12 : 44;
     doc.setFontSize(12);
     doc.setTextColor(26, 26, 46);
     doc.text('Section Manager Sign-Off', 14, gSignY);
@@ -3322,21 +3437,21 @@ function exportPDF() {
     doc.text('Twist Faults - 3m Base (Table 3 Limits) - Line Speed: ' + (lineSpeed || 'N/A') + ' mph', 14, 20);
 
     const allTwistFaultsPdf = twistFaults.concat(manualTwistFaults);
+    const visibleTwistFaultsPdf = allTwistFaultsPdf.filter((_, i) => !isDismissed('twist', i));
     const pdfTwistFaultNos = document.querySelectorAll('.fault-no-input[data-type="twist"]');
     const pdfTwistRepeatCbs = document.querySelectorAll('.repeat-fault-cb[data-type="twist"]');
-    if (allTwistFaultsPdf.length === 0) {
+    if (visibleTwistFaultsPdf.length === 0) {
         doc.setFontSize(11);
         doc.setTextColor(100);
         doc.text('No twist faults detected.', 14, 32);
     } else {
         const twistTableBody = allTwistFaultsPdf.map((f, i) => {
+            if (isDismissed('twist', i)) return null;
             const effective = getEffectiveFault('twist', i, f);
             const radius = f.manual ? f.curveRadiusLessThan400 : twistFaultRadiusSettings[i];
             const c = classifyTwistFault(effective.maxAbsTwist, lineSpeed, radius);
-            const dismissed = isDismissed('twist', i);
             const editNote = effective.edit ? '[EDITED by ' + effective.edit.inspector + ': ' + effective.edit.commentary + ']' : '';
             let actionCol = c ? c.action : '';
-            if (dismissed) actionCol += '\n[DISMISSED ' + dismissed.displayTime + ' by ' + dismissed.inspector + ': ' + dismissed.comment + ']';
             if (editNote) actionCol += '\n' + editNote;
             return [
                 (f.manual ? '* ' : '') + (i + 1),
@@ -3348,9 +3463,7 @@ function exportPDF() {
                 actionCol,
                 pdfTwistRepeatCbs[i] && pdfTwistRepeatCbs[i].checked ? 'Yes' : 'No'
             ];
-        });
-        const twistDismissedRows = {};
-        allTwistFaultsPdf.forEach((f, i) => { if (isDismissed('twist', i)) twistDismissedRows[i] = true; });
+        }).filter(Boolean);
 
         doc.autoTable({
             startY: 28,
@@ -3359,18 +3472,13 @@ function exportPDF() {
             theme: 'striped',
             headStyles: { fillColor: [26, 26, 46] },
             styles: { fontSize: 7 },
-            columnStyles: { 9: { cellWidth: 50 } },
-            didParseCell: function(data) {
-                if (data.section === 'body' && twistDismissedRows[data.row.index]) {
-                    data.cell.styles.textColor = [160, 160, 160];
-                    data.cell.styles.fontStyle = 'italic';
-                }
-            }
+            columnStyles: { 9: { cellWidth: 50 } }
         });
+
     }
 
     // Twist sign-off
-    const tSignY = allTwistFaultsPdf.length > 0 ? doc.lastAutoTable.finalY + 12 : 44;
+    const tSignY = visibleTwistFaultsPdf.length > 0 ? doc.lastAutoTable.finalY + 12 : 44;
     doc.setFontSize(12);
     doc.setTextColor(26, 26, 46);
     doc.text('Section Manager Sign-Off', 14, tSignY);
@@ -3381,7 +3489,39 @@ function exportPDF() {
     doc.text(`Signature: ${document.getElementById('twistSignOffSig').value}`, 120, tSignY + 8);
     doc.text(`Comments: ${document.getElementById('twistSignOffComments').value}`, 120, tSignY + 14);
 
-    // Page 4: Gauge Variation Faults
+    // Page 4: Invalidated Faults
+    doc.addPage();
+    doc.setFontSize(14);
+    doc.setTextColor(26, 26, 46);
+    doc.text('Invalidated Faults', 14, 20);
+
+    const invalidatedRowsPdf = getInvalidatedFaultRows();
+    if (invalidatedRowsPdf.length === 0) {
+        doc.setFontSize(11);
+        doc.setTextColor(100);
+        doc.text('No invalidated faults.', 14, 32);
+    } else {
+        const invalidatedTableBody = invalidatedRowsPdf.map((row, i) => [
+            i + 1,
+            row.typeLabel,
+            row.locationText,
+            row.valueText,
+            row.removedBy,
+            row.removedAt,
+            row.reason
+        ]);
+        doc.autoTable({
+            startY: 28,
+            head: [['#', 'Type', 'Location', 'Value', 'Removed By', 'Removed At', 'Reason']],
+            body: invalidatedTableBody,
+            theme: 'striped',
+            headStyles: { fillColor: [26, 26, 46] },
+            styles: { fontSize: 8 },
+            columnStyles: { 2: { cellWidth: 60 }, 6: { cellWidth: 90 } }
+        });
+    }
+
+    // Page 5: Gauge Variation Faults
     doc.addPage();
     doc.setFontSize(14);
     doc.setTextColor(26, 26, 46);
@@ -3424,6 +3564,7 @@ function exportPDF() {
     const allTFExportPdf = twistFaults.concat(manualTwistFaults);
     const embedData = {
         gaugeFaults: allGFExportPdf.map((f, i) => {
+            if (isDismissed('gauge', i)) return null;
             const effective = getEffectiveFault('gauge', i, f);
             return {
                 startMiles: effective.startMiles, startYards: effective.startYards,
@@ -3433,8 +3574,9 @@ function exportPDF() {
                 direction: effective.direction, length: effective.length,
                 edit: effective.edit || null
             };
-        }),
+        }).filter(Boolean),
         twistFaults: allTFExportPdf.map((f, i) => {
+            if (isDismissed('twist', i)) return null;
             const effective = getEffectiveFault('twist', i, f);
             return {
                 startMiles: effective.startMiles, startYards: effective.startYards,
@@ -3443,7 +3585,7 @@ function exportPDF() {
                 maxAbsTwist: effective.maxAbsTwist, worstValue: effective.worstValue, length: effective.length,
                 edit: effective.edit || null
             };
-        }),
+        }).filter(Boolean),
         gaugeVariationFaults: gaugeVariationFaults.map((f, i) => {
             const effective = getEffectiveFault('gaugeVariation', i, f);
             return {
@@ -3467,7 +3609,15 @@ function exportPDF() {
         metadata: { 'Route ID': metadata['Route ID'] || '', 'Track ID': metadata['Track ID'] || '' },
         lineSpeed: lineSpeed,
         trackCat: getTrackCat(),
-        faultEdits: faultEdits
+        faultEdits: faultEdits,
+        invalidatedFaults: getInvalidatedFaultRows().map(row => ({
+            faultType: row.faultType,
+            location: row.locationText,
+            value: row.valueText,
+            removedBy: row.removedBy,
+            removedAt: row.removedAt,
+            reason: row.reason
+        }))
     };
     doc.setProperties({
         title: 'Track Inspection Report - ' + (metadata['Route ID'] || ''),
