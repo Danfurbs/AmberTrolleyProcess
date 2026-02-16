@@ -418,6 +418,7 @@
         <button class="tab active" data-page="overview">Overview &amp; Graphs</button>
         <button class="tab" data-page="gaugeFaults">Gauge Faults</button>
         <button class="tab" data-page="twistFaults">Twist Faults</button>
+        <button class="tab" data-page="invalidatedFaults">Invalidated Faults</button>
         <button class="tab" data-page="gaugeVariationFaults">Gauge Variation Faults</button>
     </div>
 
@@ -584,7 +585,35 @@
         </div>
     </div>
 
-    <!-- Page 4: Gauge Variation Faults -->
+
+    <!-- Page 4: Invalidated Faults -->
+    <div class="page" id="page-invalidatedFaults">
+        <div class="card">
+            <h3>Invalidated Faults</h3>
+            <p style="margin-bottom: 12px; color: #666; font-size: 13px;">
+                Faults removed from active reporting. Use restore if a fault was invalidated by mistake.
+            </p>
+            <div style="overflow-x: auto;">
+                <table id="invalidatedFaultTable">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Type</th>
+                            <th>Location</th>
+                            <th>Value</th>
+                            <th>Removed By</th>
+                            <th>Removed At</th>
+                            <th>Reason</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Page 5: Gauge Variation Faults -->
     <div class="page" id="page-gaugeVariationFaults">
         <div class="card">
             <h3>Gauge Variation Faults - 3m Base</h3>
@@ -1585,6 +1614,7 @@ function buildReport() {
     buildGaugeFaultTable();
     buildTwistFaultTable();
     buildGaugeVariationFaultTable();
+    buildInvalidatedFaultTable();
     updateSpeedWarning();
     updateComparison();
 
@@ -1666,6 +1696,7 @@ function onLineSpeedChange() {
     buildGaugeFaultTable();
     buildTwistFaultTable();
     buildGaugeVariationFaultTable();
+    buildInvalidatedFaultTable();
     buildCharts();
     buildSchematic();
     updateSpeedWarning();
@@ -1689,6 +1720,69 @@ function getVisibleGaugeFaults() {
 
 function getVisibleTwistFaults() {
     return twistFaults.concat(manualTwistFaults).filter((_, idx) => !isDismissed('twist', idx));
+}
+
+function getFaultByTypeAndIndex(faultType, idx) {
+    if (faultType === 'gauge') {
+        const allGaugeFaults = gaugeFaults.concat(manualGaugeFaults);
+        return allGaugeFaults[idx] || null;
+    }
+    if (faultType === 'twist') {
+        const allTwistFaults = twistFaults.concat(manualTwistFaults);
+        return allTwistFaults[idx] || null;
+    }
+    return null;
+}
+
+function getInvalidatedFaultRows() {
+    return Object.entries(dismissedFaults)
+        .map(([key, info]) => {
+            const [faultType, idxText] = key.split('-');
+            const idx = parseInt(idxText, 10);
+            const sourceFault = getFaultByTypeAndIndex(faultType, idx);
+            const effective = sourceFault ? getEffectiveFault(faultType, idx, sourceFault) : null;
+            const valueText = faultType === 'gauge'
+                ? (effective && Number.isFinite(effective.worstGauge) ? effective.worstGauge.toFixed(1) + ' mm' : '--')
+                : (effective && Number.isFinite(effective.maxAbsTwist) ? effective.maxAbsTwist.toFixed(1) + ' mm' : '--');
+            const locationText = effective
+                ? (effective.startLocation + ' - ' + effective.endLocation)
+                : (info.startLocation && info.endLocation ? info.startLocation + ' - ' + info.endLocation : '--');
+            return {
+                key,
+                faultType,
+                idx,
+                typeLabel: faultType === 'gauge' ? 'Gauge' : 'Twist',
+                locationText,
+                valueText,
+                removedBy: info.inspector || 'Unknown',
+                removedAt: info.displayTime || '',
+                reason: info.comment || '',
+                timestamp: info.timestamp || ''
+            };
+        })
+        .sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+}
+
+function buildInvalidatedFaultTable() {
+    const tbody = document.querySelector('#invalidatedFaultTable tbody');
+    if (!tbody) return;
+    const rows = getInvalidatedFaultRows();
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:#888;">No invalidated faults</td></tr>';
+        return;
+    }
+    tbody.innerHTML = rows.map((row, i) => `
+        <tr>
+            <td>${i + 1}</td>
+            <td>${row.typeLabel}</td>
+            <td>${row.locationText}</td>
+            <td>${row.valueText}</td>
+            <td>${row.removedBy}</td>
+            <td>${row.removedAt}</td>
+            <td style="max-width:320px;">${row.reason}</td>
+            <td><button class="btn-restore-fault" onclick="restoreFault('${row.faultType}', ${row.idx})">Restore</button></td>
+        </tr>
+    `).join('');
 }
 
 function updateSpeedWarning() {
@@ -2429,11 +2523,15 @@ function confirmDismissFault() {
 
     const key = faultType + '-' + idx;
     const now = new Date();
+    const sourceFault = getFaultByTypeAndIndex(faultType, idx);
+    const effective = sourceFault ? getEffectiveFault(faultType, idx, sourceFault) : null;
     dismissedFaults[key] = {
         timestamp: now.toISOString(),
         displayTime: now.toLocaleDateString('en-GB') + ' ' + now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
         comment: reason,
-        inspector: inspector || 'Unknown'
+        inspector: inspector || 'Unknown',
+        startLocation: effective ? effective.startLocation : '',
+        endLocation: effective ? effective.endLocation : ''
     };
 
     // Persist to current run
@@ -2447,6 +2545,19 @@ function confirmDismissFault() {
     } else {
         buildTwistFaultTable();
     }
+    buildInvalidatedFaultTable();
+    updateSummaryStats();
+}
+
+function restoreFault(faultType, idx) {
+    const key = faultType + '-' + idx;
+    delete dismissedFaults[key];
+    if (activeRunIndex >= 0 && allRuns[activeRunIndex]) {
+        allRuns[activeRunIndex].dismissedFaults = Object.assign({}, dismissedFaults);
+    }
+    buildGaugeFaultTable();
+    buildTwistFaultTable();
+    buildInvalidatedFaultTable();
     updateSummaryStats();
 }
 
@@ -3122,6 +3233,17 @@ function exportExcel() {
     }).filter(Boolean);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tfData.length ? tfData : [{ Info: 'No twist faults' }]), 'Twist Faults');
 
+    const invalidatedData = getInvalidatedFaultRows().map((row, i) => ({
+        '#': i + 1,
+        'Fault Type': row.typeLabel,
+        'Location': row.locationText,
+        'Value': row.valueText,
+        'Removed By': row.removedBy,
+        'Removed At': row.removedAt,
+        'Reason': row.reason
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(invalidatedData.length ? invalidatedData : [{ Info: 'No invalidated faults' }]), 'Invalidated Faults');
+
     const gvData = gaugeVariationFaults.map((f, i) => {
         const effective = getEffectiveFault('gaugeVariation', i, f);
         const c = classifyGaugeVariationFault(effective.maxAbsGaugeDelta, lineSpeed);
@@ -3362,7 +3484,39 @@ function exportPDF() {
     doc.text(`Signature: ${document.getElementById('twistSignOffSig').value}`, 120, tSignY + 8);
     doc.text(`Comments: ${document.getElementById('twistSignOffComments').value}`, 120, tSignY + 14);
 
-    // Page 4: Gauge Variation Faults
+    // Page 4: Invalidated Faults
+    doc.addPage();
+    doc.setFontSize(14);
+    doc.setTextColor(26, 26, 46);
+    doc.text('Invalidated Faults', 14, 20);
+
+    const invalidatedRowsPdf = getInvalidatedFaultRows();
+    if (invalidatedRowsPdf.length === 0) {
+        doc.setFontSize(11);
+        doc.setTextColor(100);
+        doc.text('No invalidated faults.', 14, 32);
+    } else {
+        const invalidatedTableBody = invalidatedRowsPdf.map((row, i) => [
+            i + 1,
+            row.typeLabel,
+            row.locationText,
+            row.valueText,
+            row.removedBy,
+            row.removedAt,
+            row.reason
+        ]);
+        doc.autoTable({
+            startY: 28,
+            head: [['#', 'Type', 'Location', 'Value', 'Removed By', 'Removed At', 'Reason']],
+            body: invalidatedTableBody,
+            theme: 'striped',
+            headStyles: { fillColor: [26, 26, 46] },
+            styles: { fontSize: 8 },
+            columnStyles: { 2: { cellWidth: 60 }, 6: { cellWidth: 90 } }
+        });
+    }
+
+    // Page 5: Gauge Variation Faults
     doc.addPage();
     doc.setFontSize(14);
     doc.setTextColor(26, 26, 46);
@@ -3450,7 +3604,15 @@ function exportPDF() {
         metadata: { 'Route ID': metadata['Route ID'] || '', 'Track ID': metadata['Track ID'] || '' },
         lineSpeed: lineSpeed,
         trackCat: getTrackCat(),
-        faultEdits: faultEdits
+        faultEdits: faultEdits,
+        invalidatedFaults: getInvalidatedFaultRows().map(row => ({
+            faultType: row.faultType,
+            location: row.locationText,
+            value: row.valueText,
+            removedBy: row.removedBy,
+            removedAt: row.removedAt,
+            reason: row.reason
+        }))
     };
     doc.setProperties({
         title: 'Track Inspection Report - ' + (metadata['Route ID'] || ''),
