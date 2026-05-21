@@ -338,6 +338,10 @@
             <input type="text" id="inspectorInput" placeholder="Enter inspector name...">
         </div>
         <div class="run-info-group">
+            <label>Inspection Work Order Number</label>
+            <input type="text" id="workOrderInput" placeholder="e.g. WO-123456">
+        </div>
+        <div class="run-info-group">
             <label>Line Speed (mph)</label>
             <input type="number" id="lineSpeedInput" placeholder="e.g. 75" min="5" max="125" style="width:100px;">
         </div>
@@ -1304,6 +1308,7 @@ function switchRun(index) {
     const savedSettings = run.settings || {};
     document.getElementById('runNameInput').value = savedSettings.runName || '';
     document.getElementById('inspectorInput').value = savedSettings.inspector || '';
+    document.getElementById('workOrderInput').value = savedSettings.workOrder || '';
 
     const savedLineSpeed = parseInt(savedSettings.lineSpeed, 10);
     if (Number.isFinite(savedLineSpeed) && savedLineSpeed >= 5) {
@@ -1634,6 +1639,7 @@ function buildReport() {
     document.getElementById('trackCatInput').addEventListener('change', onLineSpeedChange);
     document.getElementById('runNameInput').addEventListener('input', persistRunSettings);
     document.getElementById('inspectorInput').addEventListener('input', persistRunSettings);
+    document.getElementById('workOrderInput').addEventListener('input', persistRunSettings);
     document.getElementById('overrideToggle').addEventListener('change', onOverrideChange);
     [
         'overrideGaugeWideAL', 'overrideGaugeWideIL', 'overrideGaugeWideIAL',
@@ -1709,9 +1715,24 @@ function persistRunSettings() {
     allRuns[activeRunIndex].settings = {
         runName: document.getElementById('runNameInput').value.trim(),
         inspector: document.getElementById('inspectorInput').value.trim(),
+        workOrder: document.getElementById('workOrderInput').value.trim(),
         lineSpeed: Number.isFinite(speed) ? speed : '',
         trackCat: getTrackCat()
     };
+}
+
+function getValidWorkOrderNumber() {
+    const value = document.getElementById('workOrderInput').value.trim();
+    const validPattern = /^[A-Za-z0-9][A-Za-z0-9\-_/]{2,}$/;
+    return validPattern.test(value) ? value : null;
+}
+
+function requireValidWorkOrderNumber() {
+    const workOrder = getValidWorkOrderNumber();
+    if (workOrder) return workOrder;
+    alert('Please enter a valid Inspection Work Order Number before exporting (minimum 3 characters; letters, numbers, -, _, /).');
+    document.getElementById('workOrderInput').focus();
+    return null;
 }
 
 function getVisibleGaugeFaults() {
@@ -3157,6 +3178,8 @@ function updateComparison() {
 
 // ---- Export Excel ----
 function exportExcel() {
+    const workOrder = requireValidWorkOrderNumber();
+    if (!workOrder) return;
     const wb = XLSX.utils.book_new();
     const lineSpeed = parseInt(document.getElementById('lineSpeedInput').value) || 0;
 
@@ -3165,6 +3188,7 @@ function exportExcel() {
     const metaArr = [
         { Field: 'Run Name', Value: runName },
         { Field: 'Inspector', Value: inspector },
+        { Field: 'Inspection Work Order Number', Value: workOrder },
         { Field: 'Line Speed (mph)', Value: lineSpeed || 'Not set' },
         { Field: 'Track Category', Value: getTrackCat() || 'Not set' },
         ...Object.entries(metadata).map(([k, v]) => ({ Field: k, Value: v }))
@@ -3268,6 +3292,8 @@ function exportExcel() {
 
 // ---- Export PDF ----
 function exportPDF() {
+    const workOrder = requireValidWorkOrderNumber();
+    if (!workOrder) return;
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF('landscape', 'mm', 'a4');
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -3285,10 +3311,10 @@ function exportPDF() {
     const route = metadata['Route ID'] || '';
     const track = metadata['Track ID'] || '';
     const pdfTrackCat = getTrackCat();
-    doc.text(`Run Name: ${pdfRunName}  |  Inspector: ${pdfInspector}  |  Line Speed: ${lineSpeed || 'N/A'} mph  |  Track Cat: ${pdfTrackCat || 'N/A'}`, 14, 28);
-    doc.text(`Route: ${route}  |  Track: ${track}  |  ${metadata['Job Reference'] || ''}`, 14, 34);
-    doc.text(`${metadata['Start Location'] || ''} to ${metadata['End Location'] || ''}`, 14, 40);
-    doc.text(`Date: ${metadata['Start Time'] || ''}`, 14, 46);
+    doc.text(`Run Name: ${pdfRunName}  |  Inspector: ${pdfInspector}  |  Work Order: ${workOrder}`, 14, 28);
+    doc.text(`Line Speed: ${lineSpeed || 'N/A'} mph  |  Track Cat: ${pdfTrackCat || 'N/A'}  |  Route: ${route}  |  Track: ${track}`, 14, 34);
+    doc.text(`${metadata['Job Reference'] || ''}`, 14, 40);
+    doc.text(`${metadata['Start Location'] || ''} to ${metadata['End Location'] || ''}  |  Date: ${metadata['Start Time'] || ''}`, 14, 46);
     let summaryStartY = 54;
     if (runTraceFlipped) {
         const flipReasonText = runFlipReason ? ` (${runFlipReason})` : '';
